@@ -16,6 +16,8 @@ npm start
 
 The server prints a login link such as `http://127.0.0.1:4777/?t=…`. Open it once; the token moves into a cookie. The token is stored in `~/.local/share/agent-chat/token`, so the link stays the same across restarts.
 
+Only one instance runs per port. If Agent Chat is already running, `npm start` prints its link and exits instead of crashing. To restart it with a fresh build, run `npm start -- --replace` (or set `AGENT_CHAT_REPLACE=1`). This stops the old instance gracefully, which cancels its running turns, and then starts. If a different program holds the port, the app says so and exits; change `port` in `config.yaml`.
+
 For development, `npm run dev` runs the server with `tsx watch` and the Vite dev server on port 5173 (use the `dev UI` link it prints).
 
 Other scripts: `npm test` (Vitest with a fake `claude`, no tokens spent), `npm run typecheck`, `npm run gate:inventory -- --dir <path>`.

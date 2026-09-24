@@ -39,7 +39,7 @@ export function guard(token: string, getPort: () => number): MiddlewareHandler {
     const origin = c.req.header('origin');
     if (origin && origin !== `http://${host}`) return c.text('forbidden origin', 403);
     const p = c.req.path;
-    if (p.startsWith('/api/') && p !== '/api/login') {
+    if (p.startsWith('/api/') && p !== '/api/login' && p !== '/api/health') {
       if (!tokenEquals(getCookie(c, COOKIE), token)) return c.json({ error: 'not logged in' }, 403);
     }
     await next();

@@ -190,6 +190,9 @@ export function createApp(opts: AppOptions = {}) {
     return c.json({ ok: true });
   });
   app.get('/api/session', (c) => c.json({ ok: true }));
+  // Unauthenticated identity check, used by a second start to detect an instance already running.
+  const startedAt = Date.now();
+  app.get('/api/health', (c) => c.json({ app: 'agent-chat', pid: process.pid, dataDir: paths.dataDir, startedAt }));
 
   // ---- config ----
   app.get('/api/config', (c) => c.json(configPayload(ctx.cfg)));
