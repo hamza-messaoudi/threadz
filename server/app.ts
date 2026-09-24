@@ -19,6 +19,7 @@ import { classifyInventory, readToolList } from './gate/inventory.ts';
 import { blocksOf } from './context/blocks.ts';
 import { DirIndex } from './dirs/index.ts';
 import { WorkflowEngine } from './core/workflows.ts';
+import { Scheduler } from './scheduler/scheduler.ts';
 import type { MessageRow, ThreadRow } from './db/queries.ts';
 
 export interface DirService {
@@ -35,6 +36,8 @@ export interface AppOptions {
   /** Overrides config.port for the Host check (tests). */
   port?: number;
   watch?: boolean;
+  /** Clock for the scheduler (tests). */
+  now?: () => number;
 }
 
 export class AppContext {
@@ -45,6 +48,7 @@ export class AppContext {
   runner!: TurnRunner;
   dirs: DirService = { isKnown: () => false };
   workflows!: WorkflowEngine;
+  scheduler!: Scheduler;
   private stops: (() => void)[] = [];
   private configListeners: ((cfg: LoadedConfig) => void)[] = [];
 
@@ -141,6 +145,10 @@ export function createApp(opts: AppOptions = {}) {
   ctx.onConfig(syncGate);
   ctx.runner = new TurnRunner(ctx);
   ctx.workflows = new WorkflowEngine(ctx);
+  const scheduler = new Scheduler(ctx, opts.now);
+  ctx.scheduler = scheduler;
+  ctx.onStart(() => scheduler.start());
+  ctx.addStop(() => scheduler.stop());
   const dirIndex = new DirIndex(ctx);
   ctx.dirs = dirIndex;
   dirIndex.rescan();
@@ -292,6 +300,19 @@ export function createApp(opts: AppOptions = {}) {
     if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return c.json({ error: 'not a directory' }, 400);
     const { tools, mcpServers } = await readToolList(ctx.cfg.config.claudeBin, dir);
     return c.json({ dir, mcpServers, rows: classifyInventory(tools, compileGate(ctx.cfg.readonly)) });
+  });
+
+  // ---- routines ----
+  app.get('/api/routines', (c) => c.json(scheduler.list()));
+  app.post('/api/routines/:id/run', (c) => {
+    const name = c.req.param('id');
+    if (!ctx.cfg.routines[name]) return c.json({ error: 'unknown routine' }, 404);
+    return c.json({ queued: scheduler.enqueue(name, true) });
+  });
+  app.post('/api/routines/:id/channel', (c) => {
+    const r = ctx.cfg.routines[c.req.param('id')];
+    if (!r) return c.json({ error: 'unknown routine' }, 404);
+    return c.json({ conversationId: scheduler.ensureChannel(r).id });
   });
 
   // ---- directories ----

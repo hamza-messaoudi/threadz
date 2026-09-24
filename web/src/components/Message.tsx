@@ -232,6 +232,12 @@ function ErrorCard({ m }: { m: Msg }) {
 function SystemMessage({ m, run }: MessageProps) {
   const kind = m.meta?.kind;
   if (kind === 'run_header') return <div className="run-header">{m.content}</div>;
+  if (kind === 'routine_error')
+    return (
+      <div className="system-msg">
+        <ErrorCard m={m} />
+      </div>
+    );
   if (kind === 'workflow_card') return <WorkflowCard m={m} run={run} />;
   if (kind === 'workflow_step')
     return (
