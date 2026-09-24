@@ -47,6 +47,8 @@ All through plain `claude` (no wrapper), model `haiku`, badge = first API call o
 | --- | --- | --- |
 | 2 | Turn 1 (new session) | 44 % (12,311 read / 15,439 write) — the global prefix is shared |
 | 2 | Turn 2, `--resume` | **99 %** (27,750 read / 399 write) |
+| 3 | Two agents tagged together, turn 2 | researcher 98.6 % (27,750 / 395), writer 98.8 % (27,750 / 321) |
+| 3 | Same thread, turn 3 | researcher **99 %** (28,145 / 293), writer **99 %** (28,071 / 288); replies reference each other |
 | 2 | Stop during `sleep 40` Bash call | `claude` and the Bash tool's shell (its own process group) both gone 3 s after SIGTERM to the group; message `cancelled` |
 
 ## Memory
