@@ -28,7 +28,7 @@ describe('config loader', () => {
     const cfg = loadConfig(dir);
     expect(cfg.config.maxConcurrent).toBe(2);
     expect(cfg.config.claudeBin).not.toContain('~');
-    expect(Object.keys(cfg.agents).sort()).toEqual(['researcher', 'writer']);
+    expect(Object.keys(cfg.agents).sort()).toEqual(['claude', 'researcher', 'writer']);
     expect(Object.keys(cfg.workflows)).toEqual(['brief']);
     expect(cfg.routines.standup.channel).toBe('routine-standup');
     const files = cfg.problems.map((p) => p.file).sort();
@@ -46,12 +46,33 @@ describe('config loader', () => {
   it('hot-reloads /api/config when an agent file changes', async () => {
     const { ctx, call, configDir } = makeApp({ 'agents/researcher.md': agent('researcher', 'first') }, { watch: true });
     cleanup.push(() => ctx.close());
-    expect((await call('GET', '/api/config')).body.agents[0].description).toBe('first');
+    expect((await call('GET', '/api/config')).body.agents.find((a: any) => a.name === 'researcher').description).toBe('first');
     await new Promise((r) => setTimeout(r, 100));
     fs.writeFileSync(path.join(configDir, 'agents/researcher.md'), agent('researcher', 'second'));
     fs.writeFileSync(path.join(configDir, 'agents/writer.md'), agent('writer'));
     await waitFor(() => ctx.cfg.agents.writer && ctx.cfg.agents.researcher.description === 'second', 5000);
     const res = await call('GET', '/api/config');
-    expect(res.body.agents.map((a: any) => a.description).sort()).toEqual(['d', 'second']);
+    expect(res.body.agents.filter((a: any) => !a.builtin).map((a: any) => a.description).sort()).toEqual(['d', 'second']);
+  });
+});
+
+describe('built-in neutral agent', () => {
+  it('is always available as @claude, and a user file with that name replaces it', () => {
+    const dir = tmpDir();
+    const cfg = loadConfig(dir);
+    expect(cfg.agents.claude.raw).toBe(true);
+    expect(cfg.agents.claude.body).toBe('');
+    writeFiles(dir, { 'agents/claude.md': agent('claude', 'mine') });
+    const custom = loadConfig(dir);
+    expect(custom.agents.claude.raw).toBeUndefined();
+    expect(custom.agents.claude.description).toBe('mine');
+  });
+
+  it('shares the @ namespace with workflows', () => {
+    const dir = tmpDir();
+    writeFiles(dir, { 'workflows/claude.yaml': 'name: claude\nsteps:\n  - agent: claude\n    prompt: x\n' });
+    const cfg = loadConfig(dir);
+    expect(cfg.workflows.claude).toBeUndefined();
+    expect(cfg.problems[0].message).toContain('already used');
   });
 });

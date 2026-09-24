@@ -15,7 +15,8 @@
 11. **Legacy ADO write names** are denied when the first *or second* underscore-separated word is a write verb (`wit_create_work_item` has the verb second).
 12. **Extra message columns**: `cwd`, `session_id`, `markers` (JSON), `mentions` (JSON), `meta` (JSON) on `messages`; `thread_id`, `meta` on `runs`. Needed for "Open in terminal", session markers, workflow cards and routine headers.
 13. **Gate inventory** cannot avoid Claude's first model call entirely: the CLI only emits `init` after it has a prompt, and `--max-turns 0` still calls the model. The inventory sends "Reply with: ok" and kills the process group as soon as `init` arrives, so at most one tiny call starts.
-14. **Routine freshness** is done by deleting the channel's sessions at the start of a run and, in routine channels, seeding new sessions only from messages after the latest run header. This gives the same result as "no `--resume`, cursor at the header" and also covers every agent in a workflow target.
+14. **Built-in `@claude` agent** (added after v1): plain Claude Code with no `--model` and no `--append-system-prompt`, so the CLI's own default model and prompt apply (verified: it ran on `claude-opus-5-5`, the model set in `~/.claude/settings.json`). It is still gated and resumed like any agent. A user `agents/claude.md` replaces it. The app still writes no config files; the agent is defined in `server/config/load.ts`.
+15. **Routine freshness** is done by deleting the channel's sessions at the start of a run and, in routine channels, seeding new sessions only from messages after the latest run header. This gives the same result as "no `--resume`, cursor at the header" and also covers every agent in a workflow target.
 
 ## Phase 0 answers (Claude Code 2.1.281, model alias `haiku`)
 

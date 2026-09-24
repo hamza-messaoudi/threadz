@@ -48,6 +48,8 @@ tools: [Read, Grep, WebSearch, "mcp__ado__*"]   # optional, enforced by the gate
 You are a research agent...
 ```
 
+There is also a built-in agent, `@claude`, that needs no file. It is plain Claude Code: it runs without `--model` or `--append-system-prompt`, so it uses the model from your own Claude Code settings plus your usual `CLAUDE.md`, skills and MCP servers. It still goes through the read-only gate until you switch YOLO on. To change it, create `agents/claude.md`, which replaces the built-in agent.
+
 Workflows in `workflows/*.yaml` run their steps in order in the current thread. `{{input}}` is your message without the workflow tag and `{{prev}}` is the previous step's reply:
 
 ```yaml

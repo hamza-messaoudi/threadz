@@ -3,8 +3,10 @@ import crypto from 'node:crypto';
 import { StreamParser, type RunnerEvent } from './parse.ts';
 
 export interface SpawnAgent {
-  model: string;
-  systemPrompt: string;
+  /** Omitted = Claude Code's own default model. */
+  model?: string;
+  /** Omitted or empty = no --append-system-prompt. */
+  systemPrompt?: string;
 }
 
 export interface SessionArgs {
@@ -24,7 +26,8 @@ export interface SpawnMode {
 export function buildArgs(agent: SpawnAgent, session: SessionArgs, mode: SpawnMode): string[] {
   const args = ['-p', '--output-format', 'stream-json', '--verbose'];
   if (mode.partial) args.push('--include-partial-messages');
-  args.push('--model', agent.model, '--append-system-prompt', agent.systemPrompt);
+  if (agent.model) args.push('--model', agent.model);
+  if (agent.systemPrompt) args.push('--append-system-prompt', agent.systemPrompt);
   args.push('--settings', mode.settingsPath, '--permission-mode', 'bypassPermissions');
   if (session.resume) {
     args.push('--resume', session.resume);

@@ -60,11 +60,11 @@ export function Settings() {
           {config?.agents.map((a) => (
             <tr key={a.name}>
               <td>
-                <strong>@{a.name}</strong>
+                <strong>@{a.name}</strong> {a.builtin && <span className="dd-kind">built-in</span>}
               </td>
               <td>{a.description}</td>
               <td>
-                <code>{a.model ?? config.defaultModel}</code>
+                <code>{a.builtin && !a.model ? 'Claude Code default' : (a.model ?? config.defaultModel)}</code>
               </td>
               <td>{a.tools?.length ? <code>{a.tools.join(', ')}</code> : <span className="muted">all tools</span>}</td>
             </tr>

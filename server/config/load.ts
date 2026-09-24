@@ -11,7 +11,15 @@ import {
   validateRoutine,
   validateWorkflow,
 } from './validate.ts';
-import type { LoadedConfig } from './types.ts';
+import type { AgentDef, LoadedConfig } from './types.ts';
+
+export const NEUTRAL_AGENT: AgentDef = {
+  name: 'claude',
+  description: 'Plain Claude Code: no extra system prompt, your default model',
+  body: '',
+  file: '(built-in)',
+  raw: true,
+};
 
 function listFiles(dir: string, exts: string[]): string[] {
   try {
@@ -84,6 +92,12 @@ export function loadConfig(configDir: string): LoadedConfig {
     } catch (e) {
       problem(file, e);
     }
+  }
+
+  // Built-in neutral agent: raw Claude Code with its own defaults. A user file with the same name wins.
+  if (!out.agents[NEUTRAL_AGENT.name]) {
+    claim(NEUTRAL_AGENT.name, '(built-in)');
+    out.agents[NEUTRAL_AGENT.name] = { ...NEUTRAL_AGENT };
   }
 
   for (const file of listFiles(path.join(configDir, 'workflows'), ['.yaml', '.yml'])) {

@@ -116,3 +116,22 @@ describe('YOLO toggle', () => {
     expect(JSON.parse(c1.env.AGENT_TOOLS)).toEqual([]);
   });
 });
+
+describe('neutral agent', () => {
+  it('spawns plain Claude Code: no --model, no --append-system-prompt, still gated and resumed', async () => {
+    const t = makeFakeApp();
+    cleanup.push(() => t.ctx.close());
+    const ch = await t.channel();
+    const r1 = await t.post(ch.rootThreadId, '@claude hi', [{ kind: 'agent', id: 'claude', start: 0, end: 7 }]);
+    expect((await t.settled(r1.agentMessageIds[0])).status).toBe('done');
+    const r2 = await t.post(ch.rootThreadId, 'again');
+    await t.settled(r2.agentMessageIds[0]);
+    const [c1, c2] = t.calls();
+    expect(c1.argv).not.toContain('--model');
+    expect(c1.argv).not.toContain('--append-system-prompt');
+    expect(c1.argv).toContain('--settings');
+    expect(c1.env.AGENT_MODE).toBe('readonly');
+    expect(c2.argv.slice(0, c1.argv.length)).toEqual(c1.argv);
+    expect(c2.argv.slice(c1.argv.length)).toEqual(['--resume', c1.sessionId]);
+  });
+});

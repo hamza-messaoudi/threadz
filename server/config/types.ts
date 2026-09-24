@@ -17,6 +17,8 @@ export interface AgentDef {
   tools?: string[];
   body: string;
   file: string;
+  /** Built-in plain Claude Code: no --model and no --append-system-prompt. */
+  raw?: boolean;
 }
 
 export interface WorkflowStep {

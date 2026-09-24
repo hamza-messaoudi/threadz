@@ -169,7 +169,9 @@ export class TurnRunner {
     const conversation = store.getConversation(thread.conversation_id)!;
     if (!fs.existsSync(req.cwd)) return this.finish(msg, 'error', { error: `working directory does not exist: ${req.cwd}` });
 
-    const spawnAgent = { model: agent.model ?? cfg.config.defaultModel, systemPrompt: agent.body };
+    const spawnAgent = agent.raw
+      ? { model: agent.model }
+      : { model: agent.model ?? cfg.config.defaultModel, systemPrompt: agent.body };
     const mode: SpawnMode = { settingsPath: paths.gateSettings, partial: true };
     const bin = cfg.config.claudeBin;
     const hash = flagsHash(bin, spawnAgent, mode, req.cwd);

@@ -142,7 +142,7 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
     const q = trigger.query.toLowerCase();
     if (trigger.char === '@') {
       const list: Item[] = [
-        ...(config?.agents ?? []).map((a) => ({ kind: 'agent' as const, id: a.name, label: `@${a.name}`, sub: a.description, badge: a.model })),
+        ...(config?.agents ?? []).map((a) => ({ kind: 'agent' as const, id: a.name, label: `@${a.name}`, sub: a.description, badge: a.builtin ? 'built-in' : a.model })),
         ...(config?.workflows ?? []).map((w) => ({
           kind: 'workflow' as const,
           id: w.name,

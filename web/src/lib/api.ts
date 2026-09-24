@@ -99,6 +99,8 @@ export interface AgentInfo {
   description: string;
   model?: string;
   tools?: string[];
+  /** The built-in neutral agent (plain Claude Code). */
+  builtin?: boolean;
 }
 
 export interface RoutineInfo {
