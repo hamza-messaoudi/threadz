@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTheme } from '../../lib/useTheme.ts';
 import { MessageMarkdown } from '../../markdown/MessageMarkdown.tsx';
+import { parseMessage } from '../../markdown/parse.ts';
 
 // Fixture files, loaded on demand (this whole page is a lazy chunk).
 const files = import.meta.glob('../../../../test/fixtures/markdown/*.md', { query: '?raw', import: 'default' }) as Record<string, () => Promise<string>>;
@@ -22,6 +23,8 @@ const param = (k: string) => new URLSearchParams(location.search).get(k);
  * panel width. Visual checks compare this page with the demo's reference screenshots.
  */
 export default function StyleLab() {
+  // Exposed for the performance check (test/visual/perf.spec.ts) and for poking at trees in devtools.
+  (window as unknown as { __labParse?: typeof parseMessage }).__labParse = parseMessage;
   const [name, setName] = useState(param('fixture') ?? 'prose');
   const [width, setWidth] = useState<Width>((param('width') as Width) ?? 'message');
   const [theme, setTheme] = useTheme();

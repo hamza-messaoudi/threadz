@@ -189,3 +189,29 @@ Pinned: `comark` 0.7.0, `@comark/react` 0.7.0, `tailwindcss` / `@tailwindcss/vit
   - five PRs by size and review time: prose, one `::graph-table` (with a derived "h per 100 lines" column), prose, and a caveat about the small sample. Renders with no fallback frame.
   - login sequence with the token exchange: a Mermaid `sequenceDiagram` with a front-matter title; renders.
   - three-step deploy: `::graph-flow` with three nodes, then a numbered list. (It opened with the figure rather than prose.)
+
+### Phase 8: dark mode, search snippets, performance
+
+**Dark mode.** The demo has a dark theme, so its values are used unchanged (table above). Contrast of text against the surface it sits on (`test/visual/contrast.spec.ts`), WCAG ratio:
+
+| Text | Light, message | Light, demo page | Dark, message | Dark, demo page |
+| --- | --- | --- | --- | --- |
+| ink `--foreground` | 17.93 | 17.18 | 11.71 | 13.43 |
+| accent `--graph-accent` | 5.48 | 5.25 | 8.88 | 10.18 |
+| `--muted-foreground` | 6.01 | 5.76 | 4.91 | 5.63 |
+| `--graph-muted` (figure labels, captions) | 5.49 | 5.26 | **3.26** | **3.73** |
+
+Accent text passes AA everywhere. The demo's dark `--graph-muted` (`oklch(0.52 0 0)`, the same as in light) does not reach 4.5:1 on a dark surface; it was kept to stay identical to the demo. Raising it to about `oklch(0.62 0 0)` would pass, at the cost of the dark figure comparison. Shiki uses `github-dark`; Mermaid takes its colours from the same tokens, so both follow the theme. Every fixture has a dark snapshot in the style lab tests.
+
+**Search snippets.** FTS still indexes raw `content_md`; the palette runs `cleanSnippet()` (`web/src/lib/snippet.ts`) on each snippet: `::graph-*` lines become `[figure: graph-table · Title]` (the title from the attribute or a later `title:` line), `---` and closing `::` lines are dropped, YAML data loses its punctuation (`- ["/docs", "121 kB"]` → `/docs, 121 kB`), and a Mermaid fence becomes `[diagram]`. FTS's 14-token window often starts inside a props block; that case is detected (the first `---` is followed by the closing `::`).
+
+**Performance** (MacBook, Chromium 153 headless, production build, `npm run test:perf`):
+
+| Measure | Budget | Result |
+| --- | --- | --- |
+| Initial JS added by Phases 1–7, gzipped | ≤ 250 KB | **+65 KB** (index chunk 160.2 → 225.3 KB). This is net of removing marked, DOMPurify and highlight.js. Shiki (64 KB), each grammar, Mermaid (29 KB core plus per-diagram chunks), the style lab and the catalog prompt are separate lazy chunks. `ANALYZE=1 npm run build` writes `web/dist/stats.html`. |
+| Open a channel with 200 messages including 40 figures | < 300 ms | **~160 ms** cold, from the thread response to every message body rendered; ~29 ms when re-opened (parse LRU hit) |
+| Parse per streamed frame, ~5,000 characters | < 8 ms | median **0.30 ms**, p95 0.50 ms, max 2.3 ms (parse + sanitise) |
+| Scroll through 500 messages | no long tasks > 50 ms | **none** (97,928 px scrolled in 400 px steps, one per frame) |
+
+No Web Worker and no offscreen deferral were needed.

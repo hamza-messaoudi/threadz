@@ -14,6 +14,6 @@ export default defineConfig({
     command: 'tsx test/visual/harness.ts',
     url: 'http://127.0.0.1:4799/api/health',
     reuseExistingServer: false,
-    env: { VISUAL_FIXTURES: process.env.VISUAL_FIXTURES ?? '' },
+    env: { VISUAL_FIXTURES: process.env.VISUAL_FIXTURES ?? '', VISUAL_BULK: process.env.VISUAL_BULK ?? '' },
   },
 });

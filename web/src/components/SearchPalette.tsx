@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type SearchResult } from '../lib/api.ts';
 import { navigate } from '../lib/router.ts';
+import { cleanSnippet } from '../lib/snippet.ts';
 import { agentColor } from '../lib/store.tsx';
 
 export function SearchPalette({ onClose }: { onClose: () => void }) {
@@ -73,7 +74,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
                 </span>
                 <span>· {new Date(r.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
               </div>
-              <div className="palette-snippet" dangerouslySetInnerHTML={{ __html: r.snippet }} />
+              <div className="palette-snippet" dangerouslySetInnerHTML={{ __html: cleanSnippet(r.snippet) }} />
             </button>
           ))}
           {q.trim() && !loading && !results.length && <div className="dd-empty">No messages found.</div>}

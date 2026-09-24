@@ -15,7 +15,8 @@
     "test": "vitest run",
     "test:visual": "vite build --config web/vite.config.ts && playwright test",
     "gate:inventory": "tsx server/gate/inventory-cli.ts",
-    "migrate:blocks": "tsx server/scripts/migrate-blocks.ts"
+    "migrate:blocks": "tsx server/scripts/migrate-blocks.ts",
+    "test:perf": "vite build --config web/vite.config.ts && VISUAL_BULK=200,500 playwright test perf"
   },
   "dependencies": {
     "@hono/node-server": "^2.1.1",
@@ -50,6 +51,7 @@
     "motion": "13.4.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "rollup-plugin-visualizer": "7.1.1",
     "shiki": "4.4.3",
     "tailwind-merge": "3.7.0",
     "tailwindcss": "4.3.3",

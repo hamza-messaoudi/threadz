@@ -46,13 +46,28 @@ const reply = add(
   ].join('\n\n'),
 );
 for (const extra of (process.env.VISUAL_FIXTURES ?? '').split(',').filter(Boolean)) add('agent', fixture(extra));
+
+// VISUAL_BULK=200,500: one channel per size, with a figure in every fifth message (performance checks).
+const bulkIds: Record<string, string> = {};
+for (const bulk of (process.env.VISUAL_BULK ?? '').split(',').filter(Boolean).map(Number)) {
+  const b = store.createConversation({ kind: 'channel', name: `bulk-${bulk}` });
+  bulkIds[bulk] = b.conversation.id;
+  const figures = ['::graph-meter{title="Coverage" value=0.86}\n::', '::graph-table\n---\ntitle: Routes\nheaders: [Route, Size]\nrows:\n  - ["/", "94 kB"]\n  - ["/search", "204 kB"]\n---\n::', '::graph-spark\n---\ntitle: Latency\ndata: [2, 3, 4, 3, 6, 5, 8]\n---\n::', '::graph-timeline\n---\ntitle: Rollout\nevents:\n  - { date: Aug 2, label: Staff }\n  - { date: Sep 14, label: Everyone, state: now }\n---\n::'];
+  const prose = 'The nightly build stayed green for **12 days**; see [the dashboard](https://example.com) and `ci.yml`.\n\n- lint 1m 02s\n- test 7m 40s\n\n```ts\nexport const retries = 3;\n```';
+  for (let i = 0; i < bulk; i++) {
+    const agent = i % 2 === 1;
+    const content = !agent ? `Question ${i}: how did build ${i} go?` : i % 10 === 1 || i % 10 === 5 ? `Build ${i} summary.\n\n${figures[i % figures.length]}\n\n${prose}` : `Build ${i}.\n\n${prose}`;
+    const m = store.insertMessage({ thread_id: b.rootThreadId, author_kind: agent ? 'agent' : 'user', author_id: agent ? 'researcher' : null, content_md: content, status: 'done' });
+    store.db.prepare('UPDATE messages SET created_at = ? WHERE id = ?').run(T0 + i * 1000, m.id);
+  }
+}
 const { thread } = store.upsertParagraphThread(reply, 1, '- Availability **99.98 %** against an SLO of 99.95 %');
 const tm = store.insertMessage({ thread_id: thread.id, author_kind: 'user', content_md: 'Which week dipped?', status: 'done' });
 store.db.prepare('UPDATE messages SET created_at = ? WHERE id = ?').run(t + 1000, tm.id);
 
 serve({ fetch: app.fetch, hostname: '127.0.0.1', port: VISUAL_PORT }, () => {
   console.log(`visual harness ready http://127.0.0.1:${VISUAL_PORT}/c/${conversation.id}?t=${VISUAL_TOKEN}`);
-  fs.writeFileSync(path.join(os.tmpdir(), `ac-visual-${VISUAL_PORT}.json`), JSON.stringify({ conversationId: conversation.id, threadId: thread.id }));
+  fs.writeFileSync(path.join(os.tmpdir(), `ac-visual-${VISUAL_PORT}.json`), JSON.stringify({ conversationId: conversation.id, threadId: thread.id, bulkIds }));
 });
 const stop = () => {
   ctx.close();
