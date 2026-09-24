@@ -14,7 +14,8 @@
 10. **ADO profile detection** uses word boundaries for `ado` (`/(^|[^a-z])ado([^a-z]|$)/i`); a plain `/ado/i` would match names such as `shadow`.
 11. **Legacy ADO write names** are denied when the first *or second* underscore-separated word is a write verb (`wit_create_work_item` has the verb second).
 12. **Extra message columns**: `cwd`, `session_id`, `markers` (JSON), `mentions` (JSON), `meta` (JSON) on `messages`; `thread_id`, `meta` on `runs`. Needed for "Open in terminal", session markers, workflow cards and routine headers.
-13. **Routine freshness** is done by deleting the channel's sessions at the start of a run and, in routine channels, seeding new sessions only from messages after the latest run header. This gives the same result as "no `--resume`, cursor at the header" and also covers every agent in a workflow target.
+13. **Gate inventory** cannot avoid Claude's first model call entirely: the CLI only emits `init` after it has a prompt, and `--max-turns 0` still calls the model. The inventory sends "Reply with: ok" and kills the process group as soon as `init` arrives, so at most one tiny call starts.
+14. **Routine freshness** is done by deleting the channel's sessions at the start of a run and, in routine channels, seeding new sessions only from messages after the latest run header. This gives the same result as "no `--resume`, cursor at the header" and also covers every agent in a workflow target.
 
 ## Phase 0 answers (Claude Code 2.1.281, model alias `haiku`)
 
@@ -49,6 +50,9 @@ All through plain `claude` (no wrapper), model `haiku`, badge = first API call o
 | 2 | Turn 2, `--resume` | **99 %** (27,750 read / 399 write) |
 | 3 | Two agents tagged together, turn 2 | researcher 98.6 % (27,750 / 395), writer 98.8 % (27,750 / 321) |
 | 3 | Same thread, turn 3 | researcher **99 %** (28,145 / 293), writer **99 %** (28,071 / 288); replies reference each other |
+| 4 | Read-only: "edit notes.txt" | `Edit` denied (lock chip), agent explains YOLO is needed; file unchanged |
+| 4 | Flip YOLO, same session, "make that edit now" | edit succeeds, **99.4 %** (26,085 / 146), same session id |
+| 4 | ADO work item / GitHub PR reads | **not run**: neither MCP server is configured on this machine (see Q8) |
 | 2 | Stop during `sleep 40` Bash call | `claude` and the Bash tool's shell (its own process group) both gone 3 s after SIGTERM to the group; message `cancelled` |
 
 ## Memory

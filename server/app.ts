@@ -14,6 +14,8 @@ import { Store } from './db/queries.ts';
 import { Hub } from './hub.ts';
 import { appRoot, resolvePaths, type Paths } from './paths.ts';
 import { TurnRunner } from './runner/turn.ts';
+import { compileGate, writeGate } from './gate/compile.ts';
+import { classifyInventory, readToolList } from './gate/inventory.ts';
 import type { MessageRow, ThreadRow } from './db/queries.ts';
 
 export interface DirService {
@@ -135,6 +137,9 @@ export function createApp(opts: AppOptions = {}) {
   const ctx = new AppContext(paths, opts);
   const { store, hub } = ctx;
   if (opts.watch !== false) ctx.startWatching();
+  const syncGate = () => writeGate(paths.gateJson, compileGate(ctx.cfg.readonly));
+  syncGate();
+  ctx.onConfig(syncGate);
   ctx.runner = new TurnRunner(ctx);
 
   const app = new Hono();
@@ -230,6 +235,26 @@ export function createApp(opts: AppOptions = {}) {
     const msg = store.getMessage(c.req.param('id'));
     if (!msg) return c.json({ error: 'not found' }, 404);
     return c.json({ cancelled: ctx.runner.cancel(msg.id) });
+  });
+
+  // ---- gate ----
+  app.get('/api/gate', (c) => {
+    const gate = compileGate(ctx.cfg.readonly);
+    let recent: unknown[] = [];
+    try {
+      const lines = fs.readFileSync(paths.hookLog, 'utf8').trim().split('\n').slice(-100);
+      recent = lines.filter(Boolean).map((l) => JSON.parse(l)).reverse();
+    } catch {
+      // no log yet
+    }
+    return c.json({ gate, recent });
+  });
+
+  app.get('/api/gate/inventory', async (c) => {
+    const dir = c.req.query('dir') || ctx.scratchDir();
+    if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return c.json({ error: 'not a directory' }, 400);
+    const { tools, mcpServers } = await readToolList(ctx.cfg.config.claudeBin, dir);
+    return c.json({ dir, mcpServers, rows: classifyInventory(tools, compileGate(ctx.cfg.readonly)) });
   });
 
   app.get('/api/threads/:id/events', (c) => sse(c, `thread:${c.req.param('id')}`));

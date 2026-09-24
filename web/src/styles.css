@@ -1243,3 +1243,20 @@ details.step-prompt pre {
 .msg-content {
   min-width: 0;
 }
+.inline-input {
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 5px 8px;
+  background: var(--bg);
+  width: min(420px, 100%);
+  font-family: var(--mono);
+  font-size: 12.5px;
+}
+.active-filter {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: underline;
+}
+.settings h3 {
+  margin-bottom: 4px;
+}

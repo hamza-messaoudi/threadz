@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ConversationView } from './components/ConversationView.tsx';
 import { ProblemsBanner } from './components/ProblemsBanner.tsx';
+import { Settings } from './components/Settings.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
 import { navigate, useRoute } from './lib/router.ts';
 import { AppDataProvider, useAppData } from './lib/store.tsx';
@@ -44,6 +45,8 @@ function Shell() {
         <ProblemsBanner />
         {route.view === 'conversation' && route.conversationId ? (
           <ConversationView key={route.conversationId} conversationId={route.conversationId} conversation={conversation} route={route} />
+        ) : route.view === 'settings' ? (
+          <Settings />
         ) : (
           <Home onNewChannel={() => setModal('new-channel')} />
         )}

@@ -1,0 +1,44 @@
+# Built-in defaults for the read-only gate. ~/.config/agent-chat/readonly.yaml adds to these
+# (servers override by name; allow/deny/extraAllow are appended).
+
+builtin:
+  # Read-only Claude Code tools. Task/Agent are safe because the hook also fires inside subagents
+  # (verified in Phase 0, NOTES.md Q7).
+  allow:
+    - Read
+    - Grep
+    - Glob
+    - LS
+    - WebSearch
+    - WebFetch
+    - TodoWrite
+    - Skill
+    - NotebookRead
+    - BashOutput
+    - Task
+    - Agent
+    - ToolSearch
+    - ListMcpResourcesTool
+    - ReadMcpResourceTool
+    - ReadMcpResourceDirTool
+    - TaskCreate
+    - TaskGet
+    - TaskList
+    - TaskUpdate
+    - TaskOutput
+    - LSP
+    - ReportFindings
+  # Listed for clarity; any built-in not in `allow` is denied anyway.
+  deny:
+    - Write
+    - Edit
+    - MultiEdit
+    - NotebookEdit
+    - KillShell
+    - TaskStop
+
+servers: {}
+allow: []
+deny: []
+bash:
+  extraAllow: []

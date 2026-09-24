@@ -94,3 +94,25 @@ describe('runner with fake claude', () => {
     await Promise.all(r.agentMessageIds.map((id: string) => t.settled(id)));
   });
 });
+
+describe('YOLO toggle', () => {
+  it('changes only AGENT_MODE, never the flags', async () => {
+    const t = makeFakeApp({ 'agents/a.md': agentFile('a') });
+    cleanup.push(() => t.ctx.close());
+    const ch = await t.channel();
+    const r1 = await t.post(ch.rootThreadId, '@a one', [{ kind: 'agent', id: 'a', start: 0, end: 2 }]);
+    await t.settled(r1.agentMessageIds[0]);
+    await t.call('PATCH', `/api/conversations/${ch.id}`, { yolo: true });
+    const r2 = await t.post(ch.rootThreadId, 'two');
+    await t.settled(r2.agentMessageIds[0]);
+    const r3 = await t.post(ch.rootThreadId, 'three');
+    await t.settled(r3.agentMessageIds[0]);
+    const [c1, c2, c3] = t.calls();
+    expect(c1.env.AGENT_MODE).toBe('readonly');
+    expect(c2.env.AGENT_MODE).toBe('yolo');
+    expect(c3.argv).toEqual(c2.argv);
+    expect(c2.argv.slice(0, c1.argv.length)).toEqual(c1.argv);
+    expect(c1.env.AGENT_CHAT_GATE_CONFIG).toMatch(/gate\.json$/);
+    expect(JSON.parse(c1.env.AGENT_TOOLS)).toEqual([]);
+  });
+});
