@@ -1,5 +1,6 @@
-import type { ComponentType, ReactNode } from 'react';
+import type { ComponentType } from 'react';
 import { Graph, GraphBody } from '@/registry/default/graph-frame/graph-frame';
+import { CodeBlock } from './CodeBlock.tsx';
 import { MdImage, MdTable, TaskMark } from './prose.tsx';
 import { UNKNOWN_TAG } from './sanitize.ts';
 
@@ -15,18 +16,10 @@ export function UnknownTag({ tag, source, inline }: { tag: string; source: strin
   );
 }
 
-function Pre({ children, language }: { children?: ReactNode; language?: string }) {
-  return (
-    <pre data-language={language}>
-      {children}
-    </pre>
-  );
-}
-
 /** The one tag → component map. Native overrides and figures are added by the later phases. */
 export const components: Record<string, ComponentType<any>> = {
   [UNKNOWN_TAG]: UnknownTag,
-  pre: Pre,
+  pre: CodeBlock,
   table: MdTable,
   img: MdImage,
   input: TaskMark,

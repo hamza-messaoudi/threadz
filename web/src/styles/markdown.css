@@ -341,6 +341,21 @@
     min-width: 0;
     max-width: 100%;
   }
+  /* Shiki output carries both themes as variables; .dark picks the set, no re-highlight. */
+  .md-shiki span {
+    color: var(--shiki-light);
+    font-style: var(--shiki-light-font-style);
+    font-weight: var(--shiki-light-font-weight);
+  }
+  .dark .md-shiki span {
+    color: var(--shiki-dark);
+    font-style: var(--shiki-dark-font-style);
+    font-weight: var(--shiki-dark-font-weight);
+  }
+  .md-code pre {
+    tab-size: 2;
+  }
+
   .md-unknown .graph-title-ink {
     color: var(--graph-muted);
   }

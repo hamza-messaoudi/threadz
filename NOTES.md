@@ -157,3 +157,9 @@ Pinned: `comark` 0.7.0, `@comark/react` 0.7.0, `tailwindcss` / `@tailwindcss/vit
 - Plain GFM tables reuse `::graph-table`'s markup inside the shared `Graph` frame, but keep inline markdown in cells and wrap long text cells (graph tables never wrap). mdxcn's own `tableOf()` would have flattened cells to strings.
 - Frame corners (`+`) sit centred on the frame edge, 8 px outside it, as in the demo; the width check allows for that.
 - The style lab is a lazy chunk at `/dev/markdown` (not linked from the UI) so the production build used by Playwright has it; fixtures are bundled from `test/fixtures/markdown/` at build time.
+
+### Phase 4 findings
+
+- Shiki is created from `shiki/core` with the JavaScript regex engine; grammars come from `shiki/langs`' `bundledLanguages` map (346 ids including aliases such as `ts`, `sh`, `yml`), each a separate chunk. The map, Shiki and the two themes (`github-light` / `github-dark`; the demo has no code theme) form one lazy chunk (`shiki-*.js`, 64 KB gzipped) loaded on the first fenced block with a language. Checked by `test/visual/code.spec.ts`: a message with two TypeScript blocks requests exactly one grammar chunk.
+- `codeToHtml(..., { structure: 'inline', defaultColor: false })` gives spans carrying `--shiki-light` / `--shiki-dark`; `.dark` picks the set in CSS. The output goes inside the app's own `<pre><code>` in the dashed frame (`[ TS ]` label, `copy` button, `+` corners).
+- "Fence closed" is approximated per block: the last block of a streaming message is treated as open (`BlockContext`), so it stays plain until another block follows or the message finishes.

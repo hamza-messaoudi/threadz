@@ -1,16 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { openLab } from './lab.ts';
 
-const TOKEN = 'a'.repeat(48);
 const demo = JSON.parse(fs.readFileSync(path.join(import.meta.dirname, 'reference', 'prose-styles.json'), 'utf8'));
-
-export async function openLab(page: Page, fixture: string, scheme: 'light' | 'dark', width = 'message') {
-  await page.emulateMedia({ colorScheme: scheme });
-  await page.goto(`/dev/markdown?fixture=${fixture}&width=${width}&t=${TOKEN}`);
-  await page.locator('[data-testid=lab-canvas] .md-body').waitFor();
-  await page.evaluate(() => document.fonts.ready);
-}
 
 const STYLE = ['fontSize', 'lineHeight', 'fontWeight', 'color', 'letterSpacing', 'textTransform', 'textDecorationLine', 'textDecorationStyle', 'textUnderlineOffset', 'fontStyle', 'backgroundColor'] as const;
 
@@ -60,6 +53,7 @@ for (const scheme of ['light', 'dark'] as const) {
 
   test(`prose lab snapshot (${scheme})`, async ({ page }) => {
     await openLab(page, 'prose', scheme);
+    await expect(page.locator('.md-shiki')).toHaveCount(1);
     await expect(page.getByTestId('lab-canvas')).toHaveScreenshot(`prose-${scheme}.png`, { animations: 'disabled' });
   });
 }

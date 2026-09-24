@@ -3,6 +3,7 @@ import { Fragment, memo, useLayoutEffect, useRef, useState, type ReactNode } fro
 import { flushSync } from 'react-dom';
 import type { Block } from './blocks.ts';
 import { components } from './components.tsx';
+import { BlockContext } from './context.ts';
 import { cachedFinal, parseFinal, parseMessage, type Parsed } from './parse.ts';
 
 export interface MessageMarkdownProps {
@@ -73,7 +74,7 @@ export const MessageMarkdown = memo(function MessageMarkdown({ id, content, stre
     <div className={cls}>
       {parsed.blocks.map((b) => {
         const last = b.index === n - 1;
-        const body = <BlockView node={b.node} last={last} />;
+        const body = <BlockView node={b.node} last={last} open={streaming && last} />;
         return renderBlock ? (
           <Fragment key={b.index}>{renderBlock(b, body, last)}</Fragment>
         ) : (
@@ -86,10 +87,15 @@ export const MessageMarkdown = memo(function MessageMarkdown({ id, content, stre
   );
 });
 
-const BlockView = memo(function BlockView({ node, last }: { node: Block['node']; last: boolean }) {
+const OPEN = { open: true };
+const CLOSED = { open: false };
+
+const BlockView = memo(function BlockView({ node, last, open }: { node: Block['node']; last: boolean; open: boolean }) {
   return (
-    <div className={`md-root ${last ? 'md-last' : ''}`}>
-      <MarkdownDocument value={{ nodes: [node] }} components={components} />
-    </div>
+    <BlockContext.Provider value={open ? OPEN : CLOSED}>
+      <div className={`md-root ${last ? 'md-last' : ''}`}>
+        <MarkdownDocument value={{ nodes: [node] }} components={components} />
+      </div>
+    </BlockContext.Provider>
   );
 });

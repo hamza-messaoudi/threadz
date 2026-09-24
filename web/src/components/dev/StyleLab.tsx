@@ -65,7 +65,7 @@ export default function StyleLab() {
           </button>
         ))}
         <span className="text-graph-frame">|</span>
-        <button className={tab(!!stream)} onClick={() => setStream({ at: 0, speed: 6 })}>
+        <button className={tab(!!stream)} onClick={() => setStream({ at: 0, speed: Number(param('speed') ?? 6) })}>
           {label(!!stream, 'stream')}
         </button>
       </div>

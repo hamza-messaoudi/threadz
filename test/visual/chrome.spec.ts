@@ -14,6 +14,7 @@ for (const scheme of ['light', 'dark'] as const) {
     await page.goto(`/c/${conversationId}?thread=${threadId}&t=${'a'.repeat(48)}`);
     await page.locator('.thread-panel .msg').first().waitFor();
     await page.locator('.msg-body').first().waitFor();
+    await page.locator('.md-shiki').first().waitFor();
     const mask = [page.locator('.msg-body'), page.locator('.quote .md'), page.locator('.quote > :last-child')];
     await expect(page).toHaveScreenshot(`chrome-${scheme}.png`, { mask, animations: 'disabled' });
   });
