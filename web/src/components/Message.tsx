@@ -1,6 +1,6 @@
 import { memo, useMemo, useState } from 'react';
 import { api, type ChildThread, type Message as Msg, type Run, type ToolEvent } from '../lib/api.ts';
-import { toBlocks } from '../lib/markdown.ts';
+import { MessageMarkdown } from '../markdown/MessageMarkdown.tsx';
 import { agentColor, useAppData } from '../lib/store.tsx';
 import { WorkflowCard } from './WorkflowCard.tsx';
 
@@ -66,48 +66,50 @@ function statusLabel(s: Msg['status']) {
 }
 
 function Body({ m, childThreads, activeBlock, onOpenThread, allowThreads }: MessageProps) {
-  const blocks = useMemo(() => toBlocks(m.content), [m.content]);
   const byBlock = useMemo(() => {
     const map = new Map<number, ChildThread>();
     for (const t of childThreads ?? []) if (t.parentMessageId === m.id) map.set(t.blockIndex, t);
     return map;
   }, [childThreads, m.id]);
   const canThread = allowThreads && m.status === 'done' && !!onOpenThread;
-  if (!blocks.length) return null;
+  if (!m.content) return null;
   return (
-    <div className="msg-body md">
-      {blocks.map((b) => {
-        const t = byBlock.get(b.index);
-        return (
-          <div
-            key={b.index}
-            data-block={b.index}
-            className={`block ${t ? 'has-thread' : ''} ${activeBlock === b.index ? 'active-source' : ''}`}
-            onClick={t && onOpenThread ? (e) => !window.getSelection()?.toString() && !(e.target as HTMLElement).closest('a') && onOpenThread(m, b.index) : undefined}
-          >
-            {canThread && (
-              <button
-                className="block-gutter"
-                title="Reply in thread"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenThread!(m, b.index);
-                }}
-              >
-                💬
-              </button>
-            )}
-            <div dangerouslySetInnerHTML={{ __html: b.html }} />
-            {t && (
-              <div className="thread-badge">
-                {t.replyCount} {t.replyCount === 1 ? 'reply' : 'replies'}
-                <span className="muted">· {relTime(t.lastActivity)}</span>
-              </div>
-            )}
-          </div>
-        );
-      })}
-      {m.status === 'streaming' && <span className="cursor" />}
+    <div className="msg-body">
+      <MessageMarkdown
+        id={m.id}
+        content={m.content}
+        streaming={m.status === 'streaming'}
+        renderBlock={(b, content) => {
+          const t = byBlock.get(b.index);
+          return (
+            <div
+              data-block={b.index}
+              className={`block ${t ? 'has-thread' : ''} ${activeBlock === b.index ? 'active-source' : ''}`}
+              onClick={t && onOpenThread ? (e) => !window.getSelection()?.toString() && !(e.target as HTMLElement).closest('a, button') && onOpenThread(m, b.index) : undefined}
+            >
+              {canThread && (
+                <button
+                  className="block-gutter"
+                  title="Reply in thread"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onOpenThread!(m, b.index);
+                  }}
+                >
+                  💬
+                </button>
+              )}
+              {content}
+              {t && (
+                <div className="thread-badge">
+                  {t.replyCount} {t.replyCount === 1 ? 'reply' : 'replies'}
+                  <span className="muted">· {relTime(t.lastActivity)}</span>
+                </div>
+              )}
+            </div>
+          );
+        }}
+      />
     </div>
   );
 }

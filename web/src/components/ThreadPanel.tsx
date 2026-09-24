@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, type Conversation, type Mention } from '../lib/api.ts';
-import { renderMarkdown } from '../lib/markdown.ts';
 import { agentColor } from '../lib/store.tsx';
 import { useThread } from '../lib/useThread.ts';
+import { MessageMarkdown } from '../markdown/MessageMarkdown.tsx';
 import { Composer } from './Composer.tsx';
 import { ScrollArea } from './ConversationView.tsx';
 import { MessageList } from './MessageList.tsx';
@@ -61,7 +61,7 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
               {collapsed ? 'Expand' : 'Collapse'}
             </button>
           </div>
-          <div className="md" dangerouslySetInnerHTML={{ __html: renderMarkdown(info.blockText) }} />
+          <MessageMarkdown id={`quote:${threadId}`} content={info.blockText} className="quote-body" />
         </div>
       )}
       <ScrollArea messages={t.messages} focusId={focusId}>

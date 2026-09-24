@@ -140,3 +140,11 @@ The demo's accents are three blues (228, 259, 248 hue). mdxcn's own defaults are
 - Comark's React `Mermaid` component uses `beautiful-mermaid` (not `mermaid`), is not lazy and uses its own themes, so the app's own `MermaidBlock` is used (Phase 6). Its Shiki plugin highlights at parse time, so highlighting moves into the `pre` component (Phase 4).
 
 Pinned: `comark` 0.7.0, `@comark/react` 0.7.0, `tailwindcss` / `@tailwindcss/vite` 4.3.3, `motion` 13.4.2 (types only), `clsx` 2.1.1, `tailwind-merge` 3.7.0, `shiki` 4.4.3, `mermaid` 12.0.0, `@fontsource-variable/geist` and `geist-mono` 5.3.0, `@playwright/test` 1.63.0 (matches the cached Chromium 1243).
+
+### Phase 2 findings
+
+- **`block_text` is the block's own source lines**, not Comark's serialisation. Comark 0.7.0's `renderMarkdown` drops text in one case found by the round-trip test (a task item followed by a nested list: `- [ ] b\n  - nested` comes back as `- [ ] - nested`). A small parser plugin records each top-level token's line range; `blocksOf` slices those lines (plus the closing `::` of a component, which the range leaves out), re-parses the slice and uses it only if it yields the same node, else falls back to `renderMarkdown`.
+- **Heading ids are off** (`headingIds: false`): they depend on the rest of the document (`foo`, `foo-1`), which broke the per-block round trip, and content must not set DOM ids.
+- **First paint:** Comark's parse resolves within microtasks (report.md, 6 KB: ~0.5 ms in Node), so `MessageMarkdown` parses in a layout effect and commits with `flushSync` before the browser paints. Historical messages never flash unrendered text.
+- **Streaming caret** is CSS only: `::after` on the last text element of the last block. Comark's own `caret` option mutates the tree it is given (it pushes a node into the last element), which would corrupt cached trees.
+- **Migration on a copy of the real database** (`~/.local/share/agent-chat/agent-chat.db`, backed up with SQLite's backup API): 1 thread, 0 re-anchored, 1 unchanged, 0 unmatched; a second run reports "already migrated".

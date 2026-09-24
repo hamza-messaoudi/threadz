@@ -12,5 +12,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["server", "test"]
+  "include": ["server", "shared", "test"],
+  "exclude": ["test/**/*.tsx", "test/visual"]
 }

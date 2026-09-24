@@ -342,7 +342,12 @@ export function createApp(opts: AppOptions = {}) {
     if (msg.status !== 'done') return c.json({ error: 'threads can only start on finished messages' }, 400);
     const parent = store.getThread(msg.thread_id)!;
     if (parent.parent_thread_id) return c.json({ error: 'threads cannot be nested' }, 400);
-    const blocks = blocksOf(msg.content_md);
+    let blocks: string[];
+    try {
+      blocks = await blocksOf(msg.content_md);
+    } catch {
+      return c.json({ error: 'could not parse this message' }, 400);
+    }
     const index = Number(body.block_index);
     if (!Number.isInteger(index) || index < 0 || index >= blocks.length) return c.json({ error: 'no such paragraph' }, 400);
     const { thread, created } = store.upsertParagraphThread(msg, index, blocks[index]);

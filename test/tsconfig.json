@@ -1,0 +1,6 @@
+{
+  // Component tests (.tsx) use the web compiler settings plus Node types; the rest of test/ is in ../tsconfig.json.
+  "extends": "../web/tsconfig.json",
+  "compilerOptions": { "types": ["node"], "paths": { "@/*": ["../web/src/*"] } },
+  "include": ["**/*.tsx", "visual/**/*.ts", "../web/src", "../shared"]
+}

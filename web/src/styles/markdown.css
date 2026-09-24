@@ -153,3 +153,39 @@
     color: var(--background);
   }
 }
+
+/* Message bodies (MessageMarkdown). */
+@layer components {
+  .md-unparsed {
+    white-space: pre-wrap;
+  }
+
+  /* Streaming caret: a blinking block after the last block's text (CSS only). */
+  .md-streaming .md-last > .comark-content > :is(p, h1, h2, h3, h4, h5, h6, pre):last-child::after,
+  .md-streaming .md-last > .comark-content > blockquote:last-child > :last-child::after,
+  .md-streaming .md-last > .comark-content > :is(ul, ol):last-child > li:last-child::after {
+    content: '';
+    display: inline-block;
+    width: 0.55em;
+    height: 1.05em;
+    margin-left: 0.2em;
+    vertical-align: -0.15em;
+    background: var(--graph-accent);
+    animation: md-caret 1s steps(2) infinite;
+  }
+  .md-streaming .md-last > .comark-content > :is(figure, table, div):last-child::after {
+    content: '';
+    display: block;
+    width: 0.55em;
+    height: 1.05em;
+    margin-top: 0.5rem;
+    background: var(--graph-accent);
+    animation: md-caret 1s steps(2) infinite;
+  }
+}
+
+@keyframes md-caret {
+  to {
+    opacity: 0;
+  }
+}

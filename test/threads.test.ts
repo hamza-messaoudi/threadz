@@ -19,8 +19,16 @@ async function setup() {
 }
 
 describe('blocks', () => {
-  it('splits top-level markdown blocks and skips space tokens', () => {
-    expect(blocksOf('a\n\n\n\nb\n\n```js\nx\n\ny\n```\n\n- 1\n- 2')).toEqual(['a', 'b', '```js\nx\n\ny\n```', '- 1\n- 2']);
+  it('splits top-level markdown blocks and skips blank lines', async () => {
+    expect(await blocksOf('a\n\n\n\nb\n\n```js\nx\n\ny\n```\n\n- 1\n- 2')).toEqual(['a', 'b', '```js\nx\n\ny\n```', '- 1\n- 2']);
+  });
+
+  it('keeps a whole figure, props included, as one block', async () => {
+    const md = 'Intro\n\n::graph-meter{title="Coverage" value=0.86}\n::\n\n::graph-table\n---\nheaders: [A, B]\nrows:\n  - [1, 2]\n---\n::';
+    const blocks = await blocksOf(md);
+    expect(blocks).toHaveLength(3);
+    expect(blocks[1]).toBe('::graph-meter{title="Coverage" value=0.86}\n::');
+    expect(blocks[2]).toContain('rows:');
   });
 });
 

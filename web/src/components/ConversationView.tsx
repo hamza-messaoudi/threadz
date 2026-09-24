@@ -214,6 +214,16 @@ export function ScrollArea({ messages, children, focusId }: { messages: Message[
     const el = ref.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
   }, [signature, focusId]);
+  // Markdown re-renders after a parse (and figures settle) without a new signature: stay pinned.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el || focusId || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => {
+      if (pinned.current) el.scrollTop = el.scrollHeight;
+    });
+    for (const child of Array.from(el.children)) ro.observe(child);
+    return () => ro.disconnect();
+  }, [focusId]);
   return (
     <div className="messages-scroll" ref={ref} onScroll={onScroll}>
       {children}
