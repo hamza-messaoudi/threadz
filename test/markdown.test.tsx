@@ -138,3 +138,13 @@ describe('blocks', () => {
     expect(await blockSource(node)).toBe('::graph-meter{title="Coverage" value="0.86"}\n::');
   });
 });
+
+describe('mermaid source', () => {
+  it('takes the title from front matter and strips directives', async () => {
+    const { splitTitle, stripDirectives } = await import('../web/src/markdown/MermaidBlock.tsx');
+    expect(splitTitle('---\ntitle: "Login flow"\n---\nsequenceDiagram\n  A->>B: hi')).toEqual({ title: 'Login flow', body: 'sequenceDiagram\n  A->>B: hi' });
+    expect(splitTitle('graph TD; A-->B').title).toBeNull();
+    expect(stripDirectives('%%{init: {"themeCSS": "body{display:none}", "securityLevel": "loose"}}%%\ngraph TD; A-->B')).toBe('\ngraph TD; A-->B');
+    expect(stripDirectives('---\nconfig:\n  securityLevel: loose\n---\ngraph TD; A-->B')).toBe('graph TD; A-->B');
+  });
+});
