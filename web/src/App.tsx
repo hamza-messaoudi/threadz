@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { ConversationView } from './components/ConversationView.tsx';
 import { ProblemsBanner } from './components/ProblemsBanner.tsx';
 import { SearchPalette } from './components/SearchPalette.tsx';
@@ -7,6 +7,9 @@ import { Sidebar } from './components/Sidebar.tsx';
 import { navigate, useRoute } from './lib/router.ts';
 import { AppDataProvider, useAppData } from './lib/store.tsx';
 import { useTheme } from './lib/useTheme.ts';
+
+// Not linked from the UI; loaded only when /dev/markdown is opened.
+const StyleLab = lazy(() => import('./components/dev/StyleLab.tsx'));
 
 export function App() {
   return (
@@ -50,6 +53,10 @@ function Shell() {
           <ConversationView key={route.conversationId} conversationId={route.conversationId} conversation={conversation} route={route} />
         ) : route.view === 'settings' ? (
           <Settings />
+        ) : route.view === 'dev-markdown' ? (
+          <Suspense fallback={null}>
+            <StyleLab />
+          </Suspense>
         ) : (
           <Home onNewChannel={() => setModal('new-channel')} />
         )}

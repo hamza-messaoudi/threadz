@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 export interface Route {
-  view: 'home' | 'conversation' | 'settings';
+  view: 'home' | 'conversation' | 'settings' | 'dev-markdown';
   conversationId?: string;
   threadId?: string;
   messageId?: string;
@@ -19,6 +19,7 @@ export function parseRoute(loc: Location = window.location): Route {
     };
   }
   if (loc.pathname.startsWith('/settings')) return { view: 'settings' };
+  if (loc.pathname.startsWith('/dev/markdown')) return { view: 'dev-markdown' };
   return { view: 'home' };
 }
 
@@ -31,6 +32,7 @@ export function routeUrl(r: Route): string {
     return `/c/${encodeURIComponent(r.conversationId)}${qs ? `?${qs}` : ''}`;
   }
   if (r.view === 'settings') return '/settings';
+  if (r.view === 'dev-markdown') return '/dev/markdown';
   return '/';
 }
 

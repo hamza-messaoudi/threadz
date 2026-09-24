@@ -1223,3 +1223,16 @@ details.step-prompt pre {
   background: var(--accent-soft);
 }
 }
+@layer chrome {
+.style-lab {
+  height: 100%;
+  overflow: auto;
+  padding: 24px 32px 96px;
+}
+.style-lab-bar {
+  margin-bottom: 32px;
+}
+.style-lab-canvas {
+  max-width: 100%;
+}
+}

@@ -30,7 +30,7 @@ const NATIVE: Record<string, readonly string[]> = {
   td: ['align'],
   hr: [],
   br: [],
-  img: ['src', 'alt', 'title'],
+  img: ['src', 'alt', 'title', 'framed'],
   span: [],
   sup: [],
   sub: [],
@@ -103,7 +103,7 @@ function nativeAttrs(tag: string, attrs: Record<string, unknown>): Record<string
       if (k === 'href' || k === 'src') {
         const u = safeUrl(v);
         if (u) out[k] = u;
-      } else if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') out[k] = v;
+      } else if (k !== 'framed' && (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean')) out[k] = v;
     }
   }
   if (tag === 'a' && out.href) {
@@ -138,6 +138,14 @@ export async function sanitizeNodes(nodes: Node[], components: ReadonlySet<strin
     if (!nativeOk && !components.has(tag)) {
       const inline = depth > 0 && parentTag !== 'row';
       return [UNKNOWN_TAG, { tag, source: (await nodeSource(node)).trim(), inline }];
+    }
+    // A paragraph holding only an image becomes a framed figure (a figure cannot sit inside a <p>).
+    if (tag === 'p') {
+      const solid = children.filter((c) => !(typeof c === 'string' && !c.trim()));
+      if (solid.length === 1 && isElement(solid[0]) && solid[0][0] === 'img') {
+        const img = (await walk(solid[0], depth, parentTag)) as ElementNode;
+        return ['img', { ...img[1], framed: true }];
+      }
     }
     const kids: Node[] = [];
     for (const c of children) {

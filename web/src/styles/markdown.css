@@ -15,6 +15,7 @@
 @source '../registry';
 @source '../markdown';
 @source '../components/dev';
+@source '../components/Settings.tsx';
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -156,6 +157,194 @@
 
 /* Message bodies (MessageMarkdown). */
 @layer components {
+  /*
+   * Prose, after the demo's `comark-prose` (values in NOTES.md). Every rule is guarded with
+   * :not(figure *) so it never reaches into a figure's own markup. Chat adjustments: headings one
+   * step smaller, and block gaps of 1rem (1.5rem around figures) instead of a document's 1.5rem / 3rem.
+   */
+  .md-body {
+    font-family: var(--font-sans);
+    font-size: 0.95rem;
+    line-height: 1.625;
+  }
+  .md-body > [data-block] + [data-block] {
+    margin-top: 1rem;
+  }
+  .md-body > [data-block]:has(> .md-root > .comark-content > :is(figure, .md-figure)) + [data-block],
+  .md-body > [data-block] + [data-block]:has(> .md-root > .comark-content > :is(figure, .md-figure)) {
+    margin-top: 1.5rem;
+  }
+  .md-body > [data-block] + [data-block]:has(> .md-root > .comark-content > h2) {
+    margin-top: 2rem;
+  }
+  .md-body > [data-block] + [data-block]:has(> .md-root > .comark-content > h3) {
+    margin-top: 1.5rem;
+  }
+
+  .md-root :is(h1, h2, h3, h4, h5, h6):not(figure *) {
+    font-family: var(--font-mono);
+    font-feature-settings: 'ss01' 1, 'zero' 1;
+    font-weight: 400;
+    color: var(--foreground);
+  }
+  .md-root h1:not(figure *) {
+    font-size: 1.25rem;
+    line-height: 1.25;
+    letter-spacing: -0.025em;
+  }
+  @media (width >= 40rem) {
+    .md-root h1:not(figure *) {
+      font-size: 1.5rem;
+    }
+  }
+  .md-root h2:not(figure *) {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .md-root h3:not(figure *) {
+    font-size: 0.875rem;
+    line-height: 1.5;
+    letter-spacing: -0.025em;
+  }
+  .md-root :is(h4, h5, h6):not(figure *) {
+    font-size: 0.8125rem;
+    line-height: 1.5;
+    color: var(--muted-foreground);
+  }
+
+  .md-root :is(p, li):not(figure *) {
+    font-size: 0.95rem;
+    line-height: 1.625;
+  }
+  .md-root :is(p, ul, ol):not(figure *) {
+    max-width: 68ch;
+  }
+  .md-root ul:not(figure *) {
+    list-style: none;
+  }
+  .md-root ul:not(figure *) > li {
+    position: relative;
+    padding-left: 1rem;
+  }
+  .md-root ul:not(figure *) > li::before {
+    content: '-';
+    position: absolute;
+    left: 0;
+    color: var(--graph-accent);
+  }
+  .md-root ol:not(figure *) {
+    list-style: decimal;
+    padding-left: 1.25rem;
+  }
+  .md-root ol:not(figure *) > li::marker {
+    color: var(--graph-muted);
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+  }
+  .md-root :is(ul, ol):not(figure *) > li + li {
+    margin-top: 0.5rem;
+  }
+  .md-root li:not(figure *) > :is(ul, ol) {
+    margin-top: 0.5rem;
+    padding-left: 1.25rem;
+  }
+  .md-root li:not(figure *) > p + p {
+    margin-top: 0.5rem;
+  }
+  /* Task lists: [x] / [ ] glyphs like graph-check, no dash. */
+  .md-root ul:not(figure *) > li:has(> .md-task, > p > .md-task:first-child) {
+    padding-left: 2.25rem;
+  }
+  .md-root ul:not(figure *) > li:has(> .md-task, > p > .md-task:first-child)::before {
+    content: none;
+  }
+  .md-root li > .md-task,
+  .md-root li > p > .md-task:first-child {
+    position: absolute;
+    left: 0;
+    top: 0.1em;
+  }
+  .md-task {
+    font-family: var(--font-mono);
+    font-feature-settings: 'ss01' 1, 'zero' 1;
+    font-size: 0.875rem;
+    user-select: none;
+    color: var(--graph-muted);
+  }
+  .md-task[data-done] {
+    color: var(--graph-accent);
+  }
+
+  .md-root a:not(figure *) {
+    color: var(--graph-accent);
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-underline-offset: 4px;
+    overflow-wrap: anywhere;
+  }
+  .md-root strong:not(figure *) {
+    font-weight: 500;
+    color: var(--foreground);
+  }
+  .md-root em:not(figure *) {
+    font-style: italic;
+  }
+  .md-root del:not(figure *) {
+    text-decoration-line: line-through;
+    color: var(--muted-foreground);
+  }
+  .md-root :not(pre) > code:not(figure *) {
+    background: var(--muted);
+    font-family: var(--font-mono);
+    font-size: 0.85em;
+    padding: 0.1em 0.35em;
+    overflow-wrap: anywhere;
+  }
+  .md-root pre:not(figure *) {
+    background-image:
+      repeating-linear-gradient(to right, var(--graph-frame) 0 2px, transparent 2px 7px),
+      repeating-linear-gradient(to bottom, var(--graph-frame) 0 2px, transparent 2px 7px),
+      repeating-linear-gradient(to right, var(--graph-frame) 0 2px, transparent 2px 7px),
+      repeating-linear-gradient(to bottom, var(--graph-frame) 0 2px, transparent 2px 7px);
+    background-repeat: repeat-x, repeat-y, repeat-x, repeat-y;
+    background-position: 0 0, 100% 0, 0 100%, 0 0;
+    background-size: 100% 1px, 1px 100%, 100% 1px, 1px 100%;
+    scrollbar-width: none;
+    padding: 1.25rem;
+    font-size: 0.75rem;
+    line-height: 1.625;
+    overflow-x: auto;
+  }
+  .md-root blockquote:not(figure *) {
+    border-left: 1px solid var(--graph-accent);
+    padding-left: 1rem;
+    font-style: italic;
+    color: var(--muted-foreground);
+  }
+  .md-root blockquote:not(figure *) > * + * {
+    margin-top: 0.75rem;
+  }
+  .md-root hr:not(figure *) {
+    height: 1px;
+    margin: 1rem 0;
+    border: 0;
+    background-image: repeating-linear-gradient(to right, var(--graph-frame) 0 2px, transparent 2px 7px);
+  }
+  .md-root :is(sup, sub):not(figure *) {
+    font-size: 0.75em;
+  }
+
+  /* Figures own their width; prose keeps 68ch. Everything stays inside the message column. */
+  .md-root > .comark-content {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .md-unknown .graph-title-ink {
+    color: var(--graph-muted);
+  }
+
   .md-unparsed {
     white-space: pre-wrap;
   }
@@ -188,4 +377,19 @@
   to {
     opacity: 0;
   }
+}
+
+/*
+ * The frame corners and [ TITLE ] labels paint bg-background over the dashed border, so inside the app
+ * --background is the surface a message sits on rather than the demo's page grey. Unlayered, like
+ * tokens.css, and later, so it wins.
+ */
+.md-body .md-root {
+  --background: var(--bg);
+}
+.block.active-source .md-root {
+  --background: var(--accent-soft);
+}
+.quote .md-root {
+  --background: var(--bg-soft);
 }

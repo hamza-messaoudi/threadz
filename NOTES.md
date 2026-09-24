@@ -148,3 +148,12 @@ Pinned: `comark` 0.7.0, `@comark/react` 0.7.0, `tailwindcss` / `@tailwindcss/vit
 - **First paint:** Comark's parse resolves within microtasks (report.md, 6 KB: ~0.5 ms in Node), so `MessageMarkdown` parses in a layout effect and commits with `flushSync` before the browser paints. Historical messages never flash unrendered text.
 - **Streaming caret** is CSS only: `::after` on the last text element of the last block. Comark's own `caret` option mutates the tree it is given (it pushes a node into the last element), which would corrupt cached trees.
 - **Migration on a copy of the real database** (`~/.local/share/agent-chat/agent-chat.db`, backed up with SQLite's backup API): 1 thread, 0 re-anchored, 1 unchanged, 0 unmatched; a second run reports "already migrated".
+
+### Phase 3 findings
+
+- **Prose matches the demo's computed styles** for body text, links, inline code and `h2` in light and dark (`test/visual/prose.spec.ts` compares against `test/visual/reference/prose-styles.json`, measured from the running demo; colours compared as rendered RGBA since Tailwind emits `oklch()` and the demo's build emits `lab()`).
+- Chat adjustments to the demo's document spacing: block gap 1rem (1.5rem around figures, 2rem before `h2`), headings one step smaller (h1 20/24 px, h2 and h3 14 px). List dashes stay in the accent colour as in the demo; ordered-list numbers are muted.
+- A paragraph that holds only an image becomes a framed figure (alt text as title), because a `<figure>` cannot sit inside a `<p>`. Inline images stay inline.
+- Plain GFM tables reuse `::graph-table`'s markup inside the shared `Graph` frame, but keep inline markdown in cells and wrap long text cells (graph tables never wrap). mdxcn's own `tableOf()` would have flattened cells to strings.
+- Frame corners (`+`) sit centred on the frame edge, 8 px outside it, as in the demo; the width check allows for that.
+- The style lab is a lazy chunk at `/dev/markdown` (not linked from the UI) so the production build used by Playwright has it; fixtures are bundled from `test/fixtures/markdown/` at build time.
