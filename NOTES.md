@@ -75,3 +75,68 @@ Measured on macOS (arm64), Node 24, production build (`npm start`):
 | Server 5 s after the turns finished | 63 MB; 0 `claude` processes left |
 
 The fifth and later turns queue (`maxConcurrent: 4`).
+
+# Comark rendering (plan `plan/Agent Chat — Comark rendering plan.md`)
+
+## Comark plan changes (findings that override that plan)
+
+1. **The server splits blocks too.** `server/context/blocks.ts` used `marked` to compute `block_text` for new threads, so "server untouched" cannot hold if `marked` is to go. Both sides now call one shared module, `shared/markdown/blocks.ts`, built on the same Comark parser options. `comark` is a runtime dependency of the server.
+2. **Comark's parse is async** (`parseMarkdown` returns a Promise). `parseMessage` is therefore `async` and resolves to `null` instead of throwing; `MessageMarkdown` keeps the last good tree while a newer parse is in flight.
+3. **No `motion` at runtime, by alias rather than `MotionConfig`.** The vendored components call `useReducedMotion()` from `motion/react`, which reads only the OS setting and ignores `<MotionConfig reducedMotion="always">`. With `MotionConfig` alone, figures still start at `opacity: 0` and wait for `whileInView` (seen in the demo: a full-page screenshot without scrolling shows empty frames). Vite aliases `motion/react` to `web/src/markdown/motion-static.tsx`: `useReducedMotion()` is always `true` and `motion.<tag>` renders the plain tag with the final `animate` / `whileInView` state applied as style. The vendored files stay unedited and `motion` is only a type dependency.
+4. **Tokens are scoped to `.md-root`,** not `:root`. The chrome already uses `--border` and `--muted` with other meanings, so the shadcn names are defined on `.md-root` only. The frame corners and `[ TITLE ]` labels paint `bg-background` over the dashed border, so inside messages `--background` is the surface the message sits on (the chrome's `--bg`, or the highlighted block colour), not the demo's page grey.
+5. **The chrome's dark mode follows `.dark`** instead of its own `prefers-color-scheme` media query, so the theme toggle switches chrome and messages together. With the default setting (system) the result is identical to before.
+6. **Timers:** `graph-timer` / `graph-countdown` tick from one shared 1-second ticker that stops while the tab is hidden (one `// agent-chat:` edit in `graph-clock.ts`). Per-element visibility would need edits in each component.
+
+## Style reference (atinux/comark-graphs-demo @ main, Sep 2026)
+
+Screenshots at 1280 px, light and dark, reduced motion, after scrolling the page so every `whileInView` has fired: `test/visual/reference/{report,catalog,streaming}-{light,dark}.png`. The demo has a dark theme (class `.dark` on `<html>`, stored in `localStorage.theme`, OS preference as fallback).
+
+Values copied from the demo's `src/app/globals.css`:
+
+| Token | Light | Dark |
+| --- | --- | --- |
+| `--background` | `oklch(0.985 0 0)` | `oklch(0.11 0 0)` |
+| `--foreground` (ink) | `oklch(0.205 0 0)` | `oklch(0.86 0 0)` |
+| `--border` | `oklch(0.205 0 0 / 0.1)` | `oklch(0.28 0 0)` |
+| `--muted` | `oklch(0.96 0 0)` | `oklch(0.18 0 0)` |
+| `--muted-foreground` | `oklch(0.5 0 0)` | `oklch(0.62 0 0)` |
+| `--ring` | `oklch(0.55 0.16 255)` | `oklch(0.68 0.12 255)` |
+| `--graph-accent` | `oklch(0.5 0.14 228)` | `oklch(0.77 0.15 228)` |
+| `--graph-accent-2` | `oklch(0.48 0.18 259)` | `oklch(0.68 0.18 259)` |
+| `--graph-accent-3` | `oklch(0.5 0.14 248)` | `oklch(0.72 0.15 248)` |
+| `--graph-frame` (dashed lines) | `oklch(0.205 0 0 / 0.28)` | `oklch(0.48 0 0)` |
+| `--graph-muted` | `oklch(0.52 0 0)` | `oklch(0.52 0 0)` |
+| `--graph-faint` | `oklch(0.82 0 0)` | `oklch(0.28 0 0)` |
+| `--contrast-14/23/45/70` | `0.88 / 0.76 / 0.48 / 0.28` (grey L) | `0.22 / 0.34 / 0.62 / 0.84` |
+
+The demo's accents are three blues (228, 259, 248 hue). mdxcn's own defaults are blue / amber / jade (`oklch(0.5 0.18 255)`, `oklch(0.58 0.14 70)`, `oklch(0.5 0.12 165)`); the demo's values win.
+
+- **Fonts:** Geist (sans, body) and Geist Mono (figures, headings, code) with `font-feature-settings: "ss01" 1, "zero" 1` on mono. Antialiased.
+- **Dashed lines:** `repeating-linear-gradient(<dir>, var(--graph-frame) 0 2px, transparent 2px 7px)`, 1 px thick (`graph-frame`, `graph-rule`, `graph-rule-y` utilities). `graph-scroll-x` scrolls with hidden scrollbars.
+- **Page:** `max-w-4xl` (56rem) column, `px-5 sm:px-8`; prose paragraphs and lists `max-w-[68ch]`.
+- **Prose (`comark-prose`),** every rule guarded with `:not(figure *)`: blocks `margin-top: 1.5rem`; `h1` mono `text-2xl sm:text-3xl` leading-tight tracking-tight; `h2` mono `text-base` uppercase `tracking-[0.08em]` `mt-16`; `h3` mono `text-base` tracking-tight `mt-10`; `p, li` `0.95rem` leading-relaxed; `ul` no bullets, `li::before` `-` in accent with `mr-2`, `space-y-2`; `ol` decimal `pl-5`; `a` accent, dotted underline, offset 4px; `strong` medium weight; inline `code` `bg-muted` mono `0.85em`, padding `0.1em 0.35em`; `pre` dashed frame, `p-5`, mono `text-xs`; `blockquote` accent left border 1 px, `pl-4`, italic, muted; `hr` dashed rule `my-12`; `figure` `my-12`. Selection: accent background, `--background` text.
+- **Code:** the demo has no Shiki theme (plain `pre`), so Phase 4 uses `github-light` / `github-dark`.
+- **Tabs / chrome style:** mono `text-xs` uppercase, active tab `[ LABEL ]` in accent, inactive in `--graph-muted`.
+
+## Component source
+
+- markdown-graphs is now **mdxcn** (`https://mdxcn.dev/r/all.json`, repo `keshav-exe/mdxcn` at `2928126`, 19 Sep 2026). Its registry is a superset of the demo's copy: the same 32 `graph-*` components, each also accepting children (`<Row>`, `<Head>`…) besides data props, plus content components (callout, quote, steps, terminal, changelog), Knap filters, and **`graph-comark`**.
+- `graph-comark` covers everything the demo's `coerce.ts` and adapter do: numbers, booleans, `:`-prefixed keys, `class` → `className`, `$` meta dropped, an empty `[ TITLE ]` frame (`· · ·`) while required props are missing, and a remount key on data change. Its tag list and `required` / `numeric` hints are identical to the demo's. Nothing needs porting.
+- Decision: vendor mdxcn's `graph-frame`, the 32 `graph-*` components and `graph-comark` (not content components, not Knap). Data-form output was checked against the demo screenshots in Phase 5; no component needed the demo's copy.
+- mdxcn's `row` collapses with `sm:` viewport breakpoints; the app registers its own `row` with a container query (Phase 5).
+
+## Comark API (comark / @comark/react 0.7.0)
+
+- Parse: `createMarkdownParser(options)` → `async (md) => MarkdownDocument` (`{ nodes, frontmatter, meta }`); `parseMarkdown(md, options)` is the one-shot form. Nodes are `['tag', attrs, ...children]` tuples, text is a string, comments are `[null, attrs, text]`.
+- Render: `MarkdownDocument` from `@comark/react` takes `value` (`{ nodes }` is enough, so **a subset of top-level nodes renders fine**: one block at a time), `components`, `streaming`, `caret`. It wraps the output in `<div class="comark-content">`.
+- Overrides: `components[tag]` (also tried as `ProseTag` / `Tag`) replaces native tags (`p`, `a`, `table`, `pre`…) as well as `::tags`. Children of `pre` are never resolved to components. An `as` attribute can redirect a node to another mapped component (the sanitiser removes it).
+- Serialise one node: `renderMarkdown({ nodes: [node] }, { blockAttributesStyle: 'frontmatter' })` from `comark/render`. Round-trip (parse → render → parse) is exact for prose, lists, fences, tables, `::graph-*` with YAML props and nested `::row`. Prose is re-escaped (`[js](javascript:…)` comes back as `\[js\](…)`).
+- Raw HTML: on by default (the `html` plugin, marked `$.html = 1`). **Disabled** with `registerDefaultPlugins: false` and an explicit plugin list (`task-list`, `components`, `attributes`); HTML then stays literal text. The `frontmatter` plugin is also left out, so a message starting with `---` is an `hr` as in CommonMark, and `alert` is left out so `> [!NOTE]` stays a quote.
+- `javascript:` links are not linked by the tokenizer (markdown-it's `validateLink`); the sanitiser still checks every `href` / `src`.
+- Unknown `::tag`: rendered as a DOM element with that tag name (`<unknown-thing a="1">`), so the sanitiser must replace it.
+- `style` strings become React style objects, `class` becomes `className`; any other attribute (`onclick`…) passes through as a prop. GFM table alignment arrives as `style="text-align:…"` on `th` / `td`, so the sanitiser turns it into an `align` prop before dropping `style`.
+- Task lists: `ul.contains-task-list > li.task-list-item > input[type=checkbox][:checked]`.
+- Streaming: auto-close is on by default. Reproduced the partial-YAML throw: for a 114-character `::graph-table` block, 42 prefixes throw `YAMLException` (`expected ':' after a mapping key`, `bad indentation`, `unexpected end of the stream within a double quoted scalar`). Also seen: a prefix ending in a bare word (`title`) parses as a YAML string that gets **spread into numeric keys** (`{"0":"t","1":"i",…}`); the sanitiser drops numeric keys.
+- Comark's React `Mermaid` component uses `beautiful-mermaid` (not `mermaid`), is not lazy and uses its own themes, so the app's own `MermaidBlock` is used (Phase 6). Its Shiki plugin highlights at parse time, so highlighting moves into the `pre` component (Phase 4).
+
+Pinned: `comark` 0.7.0, `@comark/react` 0.7.0, `tailwindcss` / `@tailwindcss/vite` 4.3.3, `motion` 13.4.2 (types only), `clsx` 2.1.1, `tailwind-merge` 3.7.0, `shiki` 4.4.3, `mermaid` 12.0.0, `@fontsource-variable/geist` and `geist-mono` 5.3.0, `@playwright/test` 1.63.0 (matches the cached Chromium 1243).
