@@ -72,7 +72,7 @@ export function makeFakeApp(files: Record<string, string> = {}, config: Record<s
     .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
     .join('\n');
   const t = makeApp({ 'config.yaml': yaml, ...files });
-  const calls = (): { argv: string[]; cwd: string; env: Record<string, string>; stdin: string; sessionId: string; error?: string }[] => {
+  const calls = (): { argv: string[]; cwd: string; env: Record<string, string>; stdin: string; sessionId: string; time: number; error?: string }[] => {
     try {
       return fs
         .readFileSync(path.join(state, 'calls.jsonl'), 'utf8')
