@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.ts';
 import { useAppData } from '../lib/store.tsx';
+import { useTheme, type ThemeSetting } from '../lib/useTheme.ts';
 
 interface Row {
   tool: string;
@@ -47,6 +48,8 @@ export function Settings() {
       <p className="muted">
         Config is read from <code>~/.config/agent-chat/</code> and reloads on save. The app never writes it. Claude binary: <code>{config?.claudeBin}</code>
       </p>
+
+      <ThemeSwitch />
 
       <p>
         <button className="btn small" onClick={async () => { const r = await api.post<{ count: number }>('/api/dirs/rescan'); alert(`Directory index: ${r.count} projects found.`); }}>
@@ -161,5 +164,24 @@ export function Settings() {
         </tbody>
       </table>
     </div>
+  );
+}
+
+function ThemeSwitch() {
+  const [theme, setTheme] = useTheme();
+  return (
+    <p className="row gap theme-switch">
+      <span>Theme</span>
+      {(['system', 'light', 'dark'] as ThemeSetting[]).map((t) => (
+        <button key={t} className={`btn small ${theme === t ? 'primary' : ''}`} aria-pressed={theme === t} onClick={() => setTheme(t)}>
+          {t === 'system' ? 'System' : t === 'light' ? 'Light' : 'Dark'}
+        </button>
+      ))}
+      <span className="md-root">
+        <span className="font-mono text-xs tracking-wide text-[var(--graph-accent)] uppercase dark:underline" data-testid="theme-sample">
+          [ messages ]
+        </span>
+      </span>
+    </p>
   );
 }

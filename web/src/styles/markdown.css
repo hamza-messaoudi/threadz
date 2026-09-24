@@ -1,0 +1,155 @@
+/*
+ * Tailwind for markdown output only. No Preflight: it would restyle the plain-CSS chrome
+ * (styles.css, layer "chrome"). .md-root gets a small scoped reset instead.
+ * Class scanning is limited to the renderer and the vendored components, so chrome class
+ * names such as "block" or "row" never turn into utilities.
+ */
+@layer chrome, theme, base, components, utilities;
+
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
+@import './tokens.css';
+
+@source '../registry';
+@source '../markdown';
+@source '../components/dev';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
+  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-mono--font-feature-settings: 'ss01' 1, 'zero' 1;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-border: var(--border);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-ring: var(--ring);
+
+  --color-graph-accent: var(--graph-accent);
+  --color-graph-accent-2: var(--graph-accent-2);
+  --color-graph-accent-3: var(--graph-accent-3);
+  --color-graph-frame: var(--graph-frame);
+  --color-graph-muted: var(--graph-muted);
+  --color-graph-faint: var(--graph-faint);
+  --color-contrast-14: var(--contrast-14);
+  --color-contrast-23: var(--contrast-23);
+  --color-contrast-45: var(--contrast-45);
+  --color-contrast-70: var(--contrast-70);
+
+  --ease-out-cubic: cubic-bezier(0.215, 0.61, 0.355, 1);
+}
+
+/* mdxcn utilities; the vendored components reference these class names. */
+@utility graph-frame {
+  background-image:
+    repeating-linear-gradient(to right, var(--graph-frame) 0 2px, transparent 2px 7px),
+    repeating-linear-gradient(to bottom, var(--graph-frame) 0 2px, transparent 2px 7px),
+    repeating-linear-gradient(to right, var(--graph-frame) 0 2px, transparent 2px 7px),
+    repeating-linear-gradient(to bottom, var(--graph-frame) 0 2px, transparent 2px 7px);
+  background-repeat: repeat-x, repeat-y, repeat-x, repeat-y;
+  background-position:
+    0 0,
+    100% 0,
+    0 100%,
+    0 0;
+  background-size:
+    100% 1px,
+    1px 100%,
+    100% 1px,
+    1px 100%;
+}
+
+@utility graph-rule {
+  height: 1px;
+  background-image: repeating-linear-gradient(to right, var(--graph-frame) 0 2px, transparent 2px 7px);
+}
+
+@utility graph-rule-y {
+  width: 1px;
+  background-image: repeating-linear-gradient(to bottom, var(--graph-frame) 0 2px, transparent 2px 7px);
+}
+
+@utility graph-scroll-x {
+  overflow-x: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Scoped stand-in for Preflight, so the components look as they do with it. */
+@layer base {
+  .md-root {
+    font-family: var(--font-sans);
+    color: var(--foreground);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    line-height: 1.5;
+  }
+  .md-root *,
+  .md-root ::before,
+  .md-root ::after {
+    box-sizing: border-box;
+    border: 0 solid var(--border);
+  }
+  .md-root :where(h1, h2, h3, h4, h5, h6, p, blockquote, figure, dl, dd, pre, hr, ul, ol, menu, table, figcaption) {
+    margin: 0;
+  }
+  .md-root :where(h1, h2, h3, h4, h5, h6) {
+    font-size: inherit;
+    font-weight: inherit;
+  }
+  .md-root :where(ul, ol, menu) {
+    list-style: none;
+    padding: 0;
+  }
+  .md-root :where(table) {
+    border-collapse: collapse;
+    text-indent: 0;
+    border-color: inherit;
+  }
+  .md-root :where(th, td) {
+    padding: 0;
+    text-align: inherit;
+  }
+  .md-root :where(a) {
+    color: inherit;
+    text-decoration: inherit;
+  }
+  .md-root :where(b, strong) {
+    font-weight: bolder;
+  }
+  .md-root :where(code, kbd, samp, pre) {
+    font-family: var(--font-mono);
+    font-feature-settings: 'ss01' 1, 'zero' 1;
+    font-size: 1em;
+  }
+  .md-root :where(img, svg, video, canvas) {
+    display: block;
+    vertical-align: middle;
+  }
+  .md-root :where(img, video) {
+    max-width: 100%;
+    height: auto;
+  }
+  .md-root :where(button) {
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+  }
+  .md-root :where(button:not(:disabled), [role='button']:not(:disabled)) {
+    cursor: pointer;
+  }
+  .md-root ::selection {
+    background: var(--graph-accent);
+    color: var(--background);
+  }
+}

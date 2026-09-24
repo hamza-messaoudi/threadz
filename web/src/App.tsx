@@ -6,6 +6,7 @@ import { Settings } from './components/Settings.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
 import { navigate, useRoute } from './lib/router.ts';
 import { AppDataProvider, useAppData } from './lib/store.tsx';
+import { useTheme } from './lib/useTheme.ts';
 
 export function App() {
   return (
@@ -19,6 +20,7 @@ function Shell() {
   const route = useRoute();
   const { conversations } = useAppData();
   const [modal, setModal] = useState<null | 'search' | 'new-channel'>(null);
+  useTheme(); // keeps .dark in sync with the OS while the setting is "system"
 
   // Ctrl/Cmd+K opens search.
   useEffect(() => {

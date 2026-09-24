@@ -1,3 +1,5 @@
+/* Chrome styles sit in a layer below Tailwind's, so utilities inside .md-root win over element rules here. */
+@layer chrome {
 :root {
   --bg: #ffffff;
   --bg-soft: #f7f7f8;
@@ -25,30 +27,29 @@
   color-scheme: light;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #17171b;
-    --bg-soft: #1e1e23;
-    --bg-hover: #24242a;
-    --side-bg: #111114;
-    --side-active: #2a2950;
-    --border: #2b2b32;
-    --border-strong: #3a3a43;
-    --text: #e8e8ee;
-    --muted: #9a9aa8;
-    --faint: #6b6b78;
-    --accent: #8383f0;
-    --accent-soft: #26264a;
-    --accent-text: #0d0d1a;
-    --danger: #f06a6a;
-    --danger-soft: #3a1c1c;
-    --warn: #e0a84a;
-    --warn-soft: #33290f;
-    --ok: #4cc27f;
-    --code-bg: #202027;
-    --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
-    color-scheme: dark;
-  }
+/* Dark mode follows the .dark class that useTheme sets on <html> (light, dark or system). */
+:root.dark {
+  --bg: #17171b;
+  --bg-soft: #1e1e23;
+  --bg-hover: #24242a;
+  --side-bg: #111114;
+  --side-active: #2a2950;
+  --border: #2b2b32;
+  --border-strong: #3a3a43;
+  --text: #e8e8ee;
+  --muted: #9a9aa8;
+  --faint: #6b6b78;
+  --accent: #8383f0;
+  --accent-soft: #26264a;
+  --accent-text: #0d0d1a;
+  --danger: #f06a6a;
+  --danger-soft: #3a1c1c;
+  --warn: #e0a84a;
+  --warn-soft: #33290f;
+  --ok: #4cc27f;
+  --code-bg: #202027;
+  --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
 }
 
 * {
@@ -1216,26 +1217,24 @@ details.step-prompt pre {
 .hljs-class .hljs-title {
   color: #b35900;
 }
-@media (prefers-color-scheme: dark) {
-  .hljs-keyword,
-  .hljs-selector-tag,
-  .hljs-built_in {
-    color: #c79bff;
-  }
-  .hljs-string,
-  .hljs-attr,
-  .hljs-regexp {
-    color: #7ee2a8;
-  }
-  .hljs-number,
-  .hljs-literal,
-  .hljs-type {
-    color: #ffb86b;
-  }
-  .hljs-title,
-  .hljs-title.function_ {
-    color: #79b8ff;
-  }
+.dark .hljs-keyword,
+.dark .hljs-selector-tag,
+.dark .hljs-built_in {
+  color: #c79bff;
+}
+.dark .hljs-string,
+.dark .hljs-attr,
+.dark .hljs-regexp {
+  color: #7ee2a8;
+}
+.dark .hljs-number,
+.dark .hljs-literal,
+.dark .hljs-type {
+  color: #ffb86b;
+}
+.dark .hljs-title,
+.dark .hljs-title.function_ {
+  color: #79b8ff;
 }
 .message-list {
   display: flex;
@@ -1325,4 +1324,5 @@ details.step-prompt pre {
   border-color: var(--accent);
   color: var(--text);
   background: var(--accent-soft);
+}
 }

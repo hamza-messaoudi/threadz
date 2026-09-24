@@ -13,6 +13,7 @@
     "start": "node dist/server.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p web/tsconfig.json",
     "test": "vitest run",
+    "test:visual": "vite build --config web/vite.config.ts && playwright test",
     "gate:inventory": "tsx server/gate/inventory-cli.ts"
   },
   "dependencies": {

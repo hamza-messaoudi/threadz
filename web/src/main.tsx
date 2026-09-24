@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
 import { api } from './lib/api.ts';
 import './styles.css';
+import './styles/markdown.css';
 
 function Boot() {
   const [state, setState] = useState<'checking' | 'ok' | 'locked'>('checking');
