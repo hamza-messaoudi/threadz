@@ -1,0 +1,21 @@
+# systemd user unit for Agent Chat. Not installed automatically.
+#   cp contrib/agent-chat.service ~/.config/systemd/user/
+#   (edit WorkingDirectory and the node path below)
+#   systemctl --user daemon-reload && systemctl --user enable --now agent-chat
+#   journalctl --user -u agent-chat   # shows the login URL
+[Unit]
+Description=Agent Chat (local Claude Code chat UI)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/code/agent-chat
+ExecStart=/usr/bin/env node dist/server.mjs
+Restart=on-failure
+RestartSec=3
+# Stop the app gracefully so running turns are cancelled (their process groups are killed).
+KillSignal=SIGTERM
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target

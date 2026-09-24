@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ConversationView } from './components/ConversationView.tsx';
 import { ProblemsBanner } from './components/ProblemsBanner.tsx';
+import { SearchPalette } from './components/SearchPalette.tsx';
 import { Settings } from './components/Settings.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
 import { navigate, useRoute } from './lib/router.ts';
@@ -51,7 +52,7 @@ function Shell() {
           <Home onNewChannel={() => setModal('new-channel')} />
         )}
       </main>
-      {modal === 'search' && <SearchSlot onClose={() => setModal(null)} />}
+      {modal === 'search' && <SearchPalette onClose={() => setModal(null)} />}
     </div>
   );
 }
@@ -68,17 +69,6 @@ function Home({ onNewChannel }: { onNewChannel: () => void }) {
         <button className="btn" onClick={() => navigate({ view: 'home' })}>
           Refresh
         </button>
-      </div>
-    </div>
-  );
-}
-
-// Search palette arrives in Phase 9.
-function SearchSlot({ onClose }: { onClose: () => void }) {
-  return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
-        <p className="muted">Search is not available yet.</p>
       </div>
     </div>
   );

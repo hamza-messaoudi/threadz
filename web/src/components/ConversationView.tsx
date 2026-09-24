@@ -16,19 +16,18 @@ interface Props {
 
 export function ConversationView({ conversationId, conversation, route }: Props) {
   if (conversationId === 'new') return <NewChat />;
-  if (!conversation) return <MissingConversation id={conversationId} />;
+  if (!conversation) return <MissingConversation id={conversationId} route={route} />;
   return <Loaded conversation={conversation} route={route} />;
 }
 
-function MissingConversation({ id }: { id: string }) {
-  const { conversations } = useAppData();
-  const [gone, setGone] = useState(false);
+/** Not in the sidebar list: still loading, or archived (search results can point there). */
+function MissingConversation({ id, route }: { id: string; route: Route }) {
+  const [conv, setConv] = useState<Conversation | null | undefined>(undefined);
   useEffect(() => {
-    // The list may still be loading; archived conversations are not in it.
-    const t = setTimeout(() => setGone(true), 1500);
-    return () => clearTimeout(t);
-  }, [id, conversations]);
-  return <div className="empty-state muted">{gone ? 'This conversation does not exist or was archived.' : 'Loading…'}</div>;
+    api.get<Conversation>(`/api/conversations/${id}`).then(setConv, () => setConv(null));
+  }, [id]);
+  if (conv) return <Loaded conversation={conv} route={route} />;
+  return <div className="empty-state muted">{conv === null ? 'This conversation does not exist.' : 'Loading…'}</div>;
 }
 
 /** Draft view for "New chat": the chat is created (and named) when the first message is sent. */

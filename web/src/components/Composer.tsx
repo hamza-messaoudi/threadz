@@ -186,6 +186,8 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
   }, []);
 
   const onInput = () => {
+    // A lone <br> left by the browser would hide the placeholder and push the caret to line 2.
+    if (!ref.current!.textContent && !ref.current!.querySelector('[data-kind]')) ref.current!.innerHTML = '';
     const v = serialize(ref.current!);
     setValue(v);
     saveDraft(`draft:${draftKey}`, v);

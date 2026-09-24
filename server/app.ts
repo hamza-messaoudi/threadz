@@ -20,6 +20,7 @@ import { blocksOf } from './context/blocks.ts';
 import { DirIndex } from './dirs/index.ts';
 import { WorkflowEngine } from './core/workflows.ts';
 import { Scheduler } from './scheduler/scheduler.ts';
+import { searchMessages } from './core/search.ts';
 import type { MessageRow, ThreadRow } from './db/queries.ts';
 
 export interface DirService {
@@ -301,6 +302,9 @@ export function createApp(opts: AppOptions = {}) {
     const { tools, mcpServers } = await readToolList(ctx.cfg.config.claudeBin, dir);
     return c.json({ dir, mcpServers, rows: classifyInventory(tools, compileGate(ctx.cfg.readonly)) });
   });
+
+  // ---- search ----
+  app.get('/api/search', (c) => c.json(searchMessages(store.db, c.req.query('q') ?? '')));
 
   // ---- routines ----
   app.get('/api/routines', (c) => c.json(scheduler.list()));
