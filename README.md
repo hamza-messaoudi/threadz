@@ -140,6 +140,18 @@ The same table is under **Settings → Read-only gate** in the app. The inventor
 
 `contrib/agent-chat.service` is a systemd user unit. It is not installed automatically; the comments at the top of the file explain how to install it.
 
+## Message rendering
+
+Messages are Markdown rendered with [Comark](https://comark.dev), so agents can also write figures (`::graph-table`, `::graph-plot`…) and Mermaid diagrams. Raw HTML is shown as text, and only known tags render. Open `/dev/markdown` for the style lab, which renders the fixtures in `test/fixtures/markdown/`. `npm run test:visual` runs the Playwright checks against it.
+
+If you upgrade from a version that used `marked`, run `npm run migrate:blocks` once with the app stopped. It re-anchors existing paragraph threads to the new block split.
+
+## Credits
+
+- [Comark](https://github.com/comarkdown/comark), MIT.
+- [mdxcn](https://github.com/keshav-exe/mdxcn) (formerly markdown-graphs) by Keshav Bagaade, MIT. The figure components in `web/src/registry/default/` are copied from its registry, with its licence in `web/src/registry/default/LICENSE`.
+- The visual style and the report and catalog fixtures come from [atinux/comark-graphs-demo](https://github.com/atinux/comark-graphs-demo).
+
 ## Layout
 
 ```

@@ -163,6 +163,7 @@
    * step smaller, and block gaps of 1rem (1.5rem around figures) instead of a document's 1.5rem / 3rem.
    */
   .md-body {
+    container-type: inline-size;
     font-family: var(--font-sans);
     font-size: 0.95rem;
     line-height: 1.625;
@@ -407,4 +408,18 @@
 }
 .quote .md-root {
   --background: var(--bg-soft);
+}
+
+/* Style lab, demo width: the demo's page colour instead of the chrome's, so figures compare 1:1. */
+.lab-demo-surface {
+  background: oklch(0.985 0 0);
+}
+.dark .lab-demo-surface {
+  background: oklch(0.11 0 0);
+}
+.lab-demo-surface .md-body .md-root {
+  --background: oklch(0.985 0 0);
+}
+.dark .lab-demo-surface .md-body .md-root {
+  --background: oklch(0.11 0 0);
 }

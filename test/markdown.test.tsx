@@ -19,19 +19,18 @@ describe('parseMessage', () => {
     expect(await parseMessage('::graph-table\n---\ntitle\n  rows: [')).toBeNull();
   });
 
-  it('renders every character prefix of a mixed fixture; failed prefixes keep the previous tree', async () => {
+  it('an unparseable prefix gives null and a later prefix parses again', async () => {
     const src = fixture('mixed.md');
-    let last: Parsed | null = null;
     let held = 0;
+    let last: Parsed | null = null;
     for (let i = 1; i <= src.length; i++) {
       const p = await parseMessage(src.slice(0, i));
       if (p) last = p;
       else held++;
-      if (last) expect(() => html(last!)).not.toThrow();
     }
-    expect(last).not.toBeNull();
     expect(held).toBeGreaterThan(0); // the partial-YAML case really happens
     expect(held).toBeLessThan(src.length / 4);
+    expect(last!.blocks).toHaveLength(12);
   });
 });
 
@@ -111,7 +110,7 @@ describe('blocks', () => {
     const p = (await parseMessage(src))!;
     const server = await blocksOf(src);
     expect(p.blocks.map((b) => b.index)).toEqual(server.map((_, i) => i));
-    expect(p.blocks.map((b) => b.node[0])).toEqual(['h2', 'p', 'ul', 'table', 'pre', 'md-unknown', 'md-unknown', 'md-unknown', 'pre', 'blockquote', 'hr', 'p']);
+    expect(p.blocks.map((b) => b.node[0])).toEqual(['h2', 'p', 'ul', 'table', 'pre', 'graph-meter', 'graph-table', 'row', 'pre', 'blockquote', 'hr', 'p']);
   });
 
   it('block_text round-trips through parse', async () => {

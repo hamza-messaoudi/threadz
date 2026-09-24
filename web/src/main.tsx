@@ -2,6 +2,7 @@ import { StrictMode, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App.tsx';
 import { api } from './lib/api.ts';
+import { BlockBoundary } from './markdown/BlockBoundary.tsx';
 import './styles.css';
 import './styles/markdown.css';
 
@@ -43,7 +44,14 @@ function Boot() {
   return <App />;
 }
 
-createRoot(document.getElementById('root')!).render(
+createRoot(document.getElementById('root')!, {
+  // A figure that throws is handled by its BlockBoundary (and, while streaming, is usually just
+  // half-written props): keep those out of the error console.
+  onCaughtError(error, info) {
+    if (info.errorBoundary instanceof BlockBoundary) console.debug('figure failed to render:', error);
+    else console.error(error, info.componentStack);
+  },
+}).render(
   <StrictMode>
     <Boot />
   </StrictMode>,

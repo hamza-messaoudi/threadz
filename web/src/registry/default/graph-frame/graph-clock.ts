@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from "react"
 
+// agent-chat: one shared 1-second ticker for every timer and countdown, paused while the tab is hidden.
+import { subscribeTicker } from "@/markdown/ticker"
+
 export function parseInstant(value: Date | number | string) {
   if (value instanceof Date) {
     return value.getTime()
@@ -66,8 +69,8 @@ export function useGraphNow(interval = 1000) {
 
   useEffect(() => {
     setNow(Date.now())
-    const id = window.setInterval(() => setNow(Date.now()), interval)
-    return () => window.clearInterval(id)
+    // agent-chat: was a setInterval per component.
+    return subscribeTicker(setNow, interval)
   }, [interval])
 
   return now

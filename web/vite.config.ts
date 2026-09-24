@@ -9,7 +9,11 @@ export default defineConfig({
   root: 'web',
   plugins: [react(), tailwindcss()],
   resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      // Figures render in their final state with no motion at runtime (see motion-static.tsx).
+      'motion/react': fileURLToPath(new URL('./src/markdown/motion-static.tsx', import.meta.url)),
+    },
   },
   build: { outDir: 'dist', emptyOutDir: true },
   server: {

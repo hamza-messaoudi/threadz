@@ -3,8 +3,10 @@ import { Fragment, memo, useLayoutEffect, useRef, useState, type ReactNode } fro
 import { flushSync } from 'react-dom';
 import type { Block } from './blocks.ts';
 import { components } from './components.tsx';
+import { BlockBoundary } from './BlockBoundary.tsx';
 import { BlockContext } from './context.ts';
 import { cachedFinal, parseFinal, parseMessage, type Parsed } from './parse.ts';
+import { componentTags } from './tags.ts';
 
 export interface MessageMarkdownProps {
   /** Message ID (cache key). */
@@ -51,12 +53,28 @@ export function useParsed(id: string, content: string, streaming: boolean): Pars
       const md = latest.current.content;
       parseMessage(md).then((r) => {
         // null: an unparseable prefix; the previous tree stays on screen.
-        if (r && mounted.current && latest.current.streaming) setParsed(r);
+        if (r && mounted.current && latest.current.streaming) setParsed((prev) => holdFigureProps(prev, r));
       });
     });
   }, [id, content, streaming]);
 
   return parsed;
+}
+
+/**
+ * While streaming, a figure's YAML props can parse on one frame and not on the next (a prefix that
+ * ends mid-key reads as a bare string). If the last block is the same component with less data than
+ * before, keep the previous node so the figure does not flicker back to its empty frame.
+ */
+export function holdFigureProps(prev: Parsed | null, next: Parsed): Parsed {
+  const a = prev?.blocks.at(-1);
+  const b = next.blocks.at(-1);
+  if (!a || !b || a.index !== b.index || a.node[0] !== b.node[0] || !componentTags.has(b.node[0])) return next;
+  const size = (n: Block['node']) => JSON.stringify(n[1]).length;
+  if (size(b.node) >= size(a.node)) return next;
+  const blocks = [...next.blocks.slice(0, -1), a];
+  const tree = next.tree.map((n) => (n === b.node ? a.node : n));
+  return { tree, blocks };
 }
 
 /**
@@ -66,12 +84,16 @@ export function useParsed(id: string, content: string, streaming: boolean): Pars
  */
 export const MessageMarkdown = memo(function MessageMarkdown({ id, content, streaming = false, renderBlock, className }: MessageMarkdownProps) {
   const parsed = useParsed(id, content, streaming);
-  const cls = `md-body ${streaming ? 'md-streaming' : ''} ${className ?? ''}`;
   // A finished message whose markdown cannot be parsed at all: show the text as is.
-  if (!parsed) return content && !streaming ? <div className={`${cls} md-unparsed`}>{content}</div> : null;
+  if (!parsed) return content && !streaming ? <div className={`md-body md-unparsed ${className ?? ''}`}>{content}</div> : null;
+  return <MarkdownBlocks parsed={parsed} streaming={streaming} renderBlock={renderBlock} className={className} />;
+});
+
+/** Renders an already parsed message: one `data-block` per top-level node, each with its own boundary. */
+export function MarkdownBlocks({ parsed, streaming = false, renderBlock, className }: { parsed: Parsed } & Pick<MessageMarkdownProps, 'streaming' | 'renderBlock' | 'className'>) {
   const n = parsed.blocks.length;
   return (
-    <div className={cls}>
+    <div className={`md-body ${streaming ? 'md-streaming' : ''} ${className ?? ''}`}>
       {parsed.blocks.map((b) => {
         const last = b.index === n - 1;
         const body = <BlockView node={b.node} last={last} open={streaming && last} />;
@@ -85,7 +107,9 @@ export const MessageMarkdown = memo(function MessageMarkdown({ id, content, stre
       })}
     </div>
   );
-});
+}
+
+const renderNode = (node: Block['node']) => <MarkdownDocument value={{ nodes: [node] }} components={components} />;
 
 const OPEN = { open: true };
 const CLOSED = { open: false };
@@ -94,7 +118,7 @@ const BlockView = memo(function BlockView({ node, last, open }: { node: Block['n
   return (
     <BlockContext.Provider value={open ? OPEN : CLOSED}>
       <div className={`md-root ${last ? 'md-last' : ''}`}>
-        <MarkdownDocument value={{ nodes: [node] }} components={components} />
+        <BlockBoundary node={node} open={open} render={renderNode} />
       </div>
     </BlockContext.Provider>
   );

@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./web/src', import.meta.url)),
+      'motion/react': fileURLToPath(new URL('./web/src/markdown/motion-static.tsx', import.meta.url)),
     },
   },
   test: {

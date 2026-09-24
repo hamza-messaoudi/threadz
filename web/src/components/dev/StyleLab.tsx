@@ -8,6 +8,7 @@ const names = Object.keys(files)
   .map((f) => f.split('/').pop()!.replace(/\.md$/, ''))
   .sort((a, b) => (a === 'prose' ? -1 : b === 'prose' ? 1 : a.localeCompare(b)));
 
+// demo: the demo page's content width, on the demo's page colour, for comparisons with its screenshots.
 const WIDTHS = { message: 720, thread: 360, demo: 832 } as const;
 type Width = keyof typeof WIDTHS;
 
@@ -28,7 +29,8 @@ export default function StyleLab() {
     const load = Object.entries(files).find(([f]) => f.endsWith(`/${name}.md`))?.[1];
     setSource(null);
     setStream(null);
-    load?.().then(setSource);
+    // The demo's fixtures start with YAML frontmatter, which messages never have (and the parser leaves on).
+    load?.().then((md) => setSource(md.replace(/^---\n[\s\S]*?\n---\n+/, '')));
   }, [name]);
 
   // Streaming mode: reveal the fixture a few characters per frame, as a model would.
@@ -69,7 +71,7 @@ export default function StyleLab() {
           {label(!!stream, 'stream')}
         </button>
       </div>
-      <div className="style-lab-canvas" style={{ width: WIDTHS[width] }} data-testid="lab-canvas">
+      <div className={`style-lab-canvas ${width === 'demo' ? 'lab-demo-surface' : ''}`} style={{ width: WIDTHS[width] }} data-testid="lab-canvas">
         {shown !== null && <MessageMarkdown key={`${name}:${stream ? 's' : 'f'}`} id={`lab:${name}`} content={shown} streaming={streaming} />}
       </div>
     </div>
