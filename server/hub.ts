@@ -3,6 +3,8 @@ export type HubListener = (event: string, data: unknown) => void;
 /** In-memory pub/sub for Server-Sent Events. Topics: "global" and "thread:<id>". */
 export class Hub {
   private topics = new Map<string, Set<HubListener>>();
+  /** Observes every publish (used to derive secondary events). */
+  tap?: (topic: string, event: string, data: unknown) => void;
 
   subscribe(topic: string, fn: HubListener): () => void {
     let set = this.topics.get(topic);
@@ -15,6 +17,7 @@ export class Hub {
   }
 
   publish(topic: string, event: string, data: unknown): void {
+    this.tap?.(topic, event, data);
     for (const fn of this.topics.get(topic) ?? []) {
       try {
         fn(event, data);

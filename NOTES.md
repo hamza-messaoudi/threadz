@@ -53,6 +53,8 @@ All through plain `claude` (no wrapper), model `haiku`, badge = first API call o
 | 4 | Read-only: "edit notes.txt" | `Edit` denied (lock chip), agent explains YOLO is needed; file unchanged |
 | 4 | Flip YOLO, same session, "make that edit now" | edit succeeds, **99.4 %** (26,085 / 146), same session id |
 | 4 | ADO work item / GitHub PR reads | **not run**: neither MCP server is configured on this machine (see Q8) |
+| 5 | Selection spanning two paragraphs (browser) | snapped to paragraph 1; panel opened with that quote; URL `?thread=` |
+| 5 | First thread reply (untagged → source agent) | forked, **98 %**; answered with a detail only in the earlier main discussion (MySQL/PostgreSQL indexing) |
 | 2 | Stop during `sleep 40` Bash call | `claude` and the Bash tool's shell (its own process group) both gone 3 s after SIGTERM to the group; message `cancelled` |
 
 ## Memory

@@ -6,6 +6,7 @@ import { useThread } from '../lib/useThread.ts';
 import { ChannelSettings } from './ChannelSettings.tsx';
 import { Composer } from './Composer.tsx';
 import { MessageList } from './MessageList.tsx';
+import { ThreadPanel } from './ThreadPanel.tsx';
 
 interface Props {
   conversationId: string;
@@ -60,6 +61,10 @@ function NewChat() {
 function Loaded({ conversation, route }: { conversation: Conversation; route: Route }) {
   const t = useThread(conversation.rootThreadId);
   const [settings, setSettings] = useState(false);
+  const [activeSource, setActiveSource] = useState<{ messageId: string; blockIndex: number } | null>(null);
+  const [floating, setFloating] = useState<{ x: number; y: number; messageId: string; blockIndex: number } | null>(null);
+  const messagesRef = useRef(t.messages);
+  messagesRef.current = t.messages;
   const { routines } = useAppData();
   const routine = conversation.routineId ? routines.find((r) => r.name === conversation.routineId) : undefined;
 
@@ -78,6 +83,25 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
     [conversation.id],
   );
 
+  // Selecting text snaps to its paragraph (the block holding the selection start) and offers "Thread".
+  const onMouseUp = useCallback(() => {
+    setTimeout(() => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || !sel.rangeCount) return setFloating(null);
+      const range = sel.getRangeAt(0);
+      const start = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : (range.startContainer as HTMLElement);
+      let block = start?.closest<HTMLElement>('[data-block]');
+      const msgEl = (block ?? start)?.closest<HTMLElement>('[data-message-id]');
+      if (!msgEl || msgEl.closest('.thread-panel')) return setFloating(null);
+      if (!block) block = msgEl.querySelector<HTMLElement>('[data-block]'); // selection began above the first block
+      const m = messagesRef.current.find((x) => x.id === msgEl.dataset.messageId);
+      if (!block || !m || m.status !== 'done' || m.authorKind === 'system') return setFloating(null);
+      const rect = range.getBoundingClientRect();
+      setFloating({ x: Math.min(rect.right, window.innerWidth - 90), y: Math.max(rect.top - 34, 8), messageId: m.id, blockIndex: Number(block.dataset.block) });
+    }, 0);
+  }, []);
+
+  const closePanel = useCallback(() => navigate({ view: 'conversation', conversationId: conversation.id }), [conversation.id]);
   return (
     <div className={`conversation ${conversation.yolo ? 'yolo' : ''}`}>
       <div className="conv-main">
@@ -102,6 +126,7 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
             Settings
           </button>
         </header>
+        <div className="scroll-host" onMouseUp={onMouseUp} onMouseDown={() => setFloating(null)}>
         <ScrollArea messages={t.messages} focusId={route.threadId ? undefined : route.messageId}>
           {t.loading ? (
             <div className="empty-state muted">Loading…</div>
@@ -114,10 +139,12 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
               runs={t.runs}
               onOpenThread={openThread}
               allowThreads
+              activeSource={route.threadId ? activeSource : null}
               focusId={route.threadId ? undefined : route.messageId}
             />
           )}
         </ScrollArea>
+        </div>
         <Composer
           draftKey={conversation.rootThreadId}
           conversation={conversation}
@@ -127,6 +154,31 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
           autoFocus
         />
       </div>
+      {route.threadId && (
+        <ThreadPanel
+          key={route.threadId}
+          threadId={route.threadId}
+          conversation={conversation}
+          focusId={route.messageId}
+          onClose={closePanel}
+          onSource={setActiveSource}
+        />
+      )}
+      {floating && (
+        <button
+          className="floating-thread-btn"
+          style={{ left: floating.x, top: floating.y }}
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            const m = t.messages.find((x) => x.id === floating.messageId);
+            setFloating(null);
+            window.getSelection()?.removeAllRanges();
+            if (m) openThread(m, floating.blockIndex);
+          }}
+        >
+          💬 Thread
+        </button>
+      )}
       {settings && <ChannelSettings conversation={conversation} onClose={() => setSettings(false)} />}
     </div>
   );

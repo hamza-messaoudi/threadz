@@ -16,6 +16,7 @@ import { appRoot, resolvePaths, type Paths } from './paths.ts';
 import { TurnRunner } from './runner/turn.ts';
 import { compileGate, writeGate } from './gate/compile.ts';
 import { classifyInventory, readToolList } from './gate/inventory.ts';
+import { blocksOf } from './context/blocks.ts';
 import type { MessageRow, ThreadRow } from './db/queries.ts';
 
 export interface DirService {
@@ -151,6 +152,24 @@ export function createApp(opts: AppOptions = {}) {
     return c.json({ error: err.message }, status);
   });
 
+  /** Keeps the parent's thread badge (reply count, last activity) live. */
+  function publishChildSummary(threadId: string) {
+    const t = store.getThread(threadId);
+    if (!t?.parent_thread_id) return;
+    const sum = store.childThreadSummaries(t.parent_thread_id).find((x) => x.id === t.id);
+    if (!sum) return;
+    hub.thread(t.parent_thread_id, 'thread.created', {
+      id: sum.id,
+      parentMessageId: sum.parent_message_id,
+      blockIndex: sum.block_index,
+      replyCount: sum.reply_count,
+      lastActivity: sum.last_activity ?? sum.created_at,
+    });
+  }
+  hub.tap = (topic, event) => {
+    if (topic.startsWith('thread:') && (event === 'message.created' || event === 'message.done')) publishChildSummary(topic.slice(7));
+  };
+
   // ---- auth ----
   app.post('/api/login', async (c) => {
     const body = await c.req.json().catch(() => ({}));
@@ -255,6 +274,22 @@ export function createApp(opts: AppOptions = {}) {
     if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) return c.json({ error: 'not a directory' }, 400);
     const { tools, mcpServers } = await readToolList(ctx.cfg.config.claudeBin, dir);
     return c.json({ dir, mcpServers, rows: classifyInventory(tools, compileGate(ctx.cfg.readonly)) });
+  });
+
+  // ---- paragraph threads ----
+  app.post('/api/threads', async (c) => {
+    const body = await c.req.json();
+    const msg = store.getMessage(String(body.message_id ?? ''));
+    if (!msg) return c.json({ error: 'message not found' }, 404);
+    if (msg.status !== 'done') return c.json({ error: 'threads can only start on finished messages' }, 400);
+    const parent = store.getThread(msg.thread_id)!;
+    if (parent.parent_thread_id) return c.json({ error: 'threads cannot be nested' }, 400);
+    const blocks = blocksOf(msg.content_md);
+    const index = Number(body.block_index);
+    if (!Number.isInteger(index) || index < 0 || index >= blocks.length) return c.json({ error: 'no such paragraph' }, 400);
+    const { thread, created } = store.upsertParagraphThread(msg, index, blocks[index]);
+    if (created) publishChildSummary(thread.id);
+    return c.json({ id: thread.id, conversationId: thread.conversation_id, created }, created ? 201 : 200);
   });
 
   app.get('/api/threads/:id/events', (c) => sse(c, `thread:${c.req.param('id')}`));

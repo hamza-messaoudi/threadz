@@ -101,7 +101,7 @@ async function main() {
   }
 
   const lastMessage = /<message from="[^"]*">\n([\s\S]*?)\n<\/message>\s*$/.exec(stdin);
-  const reply = directive('FAKE_REPLY') ?? `ack: ${(lastMessage ? lastMessage[1] : stdin).slice(0, 60)}`;
+  const reply = directive('FAKE_REPLY')?.replace(/\\n/g, '\n') ?? `ack: ${(lastMessage ? lastMessage[1] : stdin).slice(0, 60)}`;
   if (partial) {
     out({ type: 'stream_event', parent_tool_use_id: null, session_id: sessionId, event: { type: 'message_start', message: { id: msgId, usage } } });
     for (const chunk of reply.match(/.{1,8}/gs) ?? []) {
