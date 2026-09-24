@@ -7,11 +7,22 @@ import { COOKIE, guard, loadOrCreateToken, tokenEquals } from './auth.ts';
 import { loadConfig } from './config/load.ts';
 import type { LoadedConfig } from './config/types.ts';
 import { watchConfig } from './config/watch.ts';
+import { defaultAgent, HttpError, postUserMessage } from './core/dispatch.ts';
 import { serializeConversation, serializeMessage } from './core/serialize.ts';
 import { openDb } from './db/migrate.ts';
 import { Store } from './db/queries.ts';
 import { Hub } from './hub.ts';
 import { appRoot, resolvePaths, type Paths } from './paths.ts';
+import { TurnRunner } from './runner/turn.ts';
+import type { MessageRow, ThreadRow } from './db/queries.ts';
+
+export interface DirService {
+  isKnown(path: string): boolean;
+}
+
+export interface WorkflowService {
+  start(opts: { workflow: string; thread: ThreadRow; trigger: MessageRow; cwd: string; mentions: unknown }): { id: string };
+}
 
 export interface AppOptions {
   configDir?: string;
@@ -26,6 +37,13 @@ export class AppContext {
   readonly store: Store;
   readonly hub = new Hub();
   readonly token: string;
+  runner!: TurnRunner;
+  dirs: DirService = { isKnown: () => false };
+  workflows: WorkflowService = {
+    start: () => {
+      throw new HttpError(400, 'workflows are not available yet');
+    },
+  };
   private stops: (() => void)[] = [];
   private configListeners: ((cfg: LoadedConfig) => void)[] = [];
 
@@ -73,6 +91,7 @@ export class AppContext {
   }
 
   shutdown(): void {
+    this.runner?.cancelAll();
     this.close();
   }
 
@@ -116,12 +135,13 @@ export function createApp(opts: AppOptions = {}) {
   const ctx = new AppContext(paths, opts);
   const { store, hub } = ctx;
   if (opts.watch !== false) ctx.startWatching();
+  ctx.runner = new TurnRunner(ctx);
 
   const app = new Hono();
   app.use('*', guard(ctx.token, () => ctx.port));
 
   app.onError((err, c) => {
-    const status = (err as any).status ?? 500;
+    const status = err instanceof HttpError ? err.status : ((err as any).status ?? 500);
     if (status >= 500) console.error(err);
     return c.json({ error: err.message }, status);
   });
@@ -189,6 +209,8 @@ export function createApp(opts: AppOptions = {}) {
         blockText: thread.block_text,
       },
       messages: store.listMessages(thread.id).map(serializeMessage),
+      defaultAgent: defaultAgent(ctx, thread),
+      sourceMessage: thread.parent_message_id ? serializeMessage(store.getMessage(thread.parent_message_id)!) : null,
       childThreads: store.childThreadSummaries(thread.id).map((t) => ({
         id: t.id,
         parentMessageId: t.parent_message_id,
@@ -197,6 +219,17 @@ export function createApp(opts: AppOptions = {}) {
         lastActivity: t.last_activity ?? t.created_at,
       })),
     });
+  });
+
+  app.post('/api/threads/:id/messages', async (c) => {
+    const body = await c.req.json();
+    return c.json(postUserMessage(ctx, c.req.param('id'), body), 201);
+  });
+
+  app.post('/api/messages/:id/cancel', (c) => {
+    const msg = store.getMessage(c.req.param('id'));
+    if (!msg) return c.json({ error: 'not found' }, 404);
+    return c.json({ cancelled: ctx.runner.cancel(msg.id) });
   });
 
   app.get('/api/threads/:id/events', (c) => sse(c, `thread:${c.req.param('id')}`));

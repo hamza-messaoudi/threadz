@@ -55,3 +55,42 @@ export async function waitFor<T>(fn: () => T | undefined | false | null, timeout
     await new Promise((r) => setTimeout(r, stepMs));
   }
 }
+
+export const FAKE_CLAUDE = path.resolve('test/fake-claude.mjs');
+
+export function agentFile(name: string, body = `You are ${name}.`, extra = '') {
+  return `---\nname: ${name}\ndescription: ${name} agent\nmodel: haiku\n${extra}---\n${body}\n`;
+}
+
+/** App wired to fake Claude. Returns helpers to read the fake's call log. */
+export function makeFakeApp(files: Record<string, string> = {}, config: Record<string, unknown> = {}) {
+  const state = tmpDir('ac-fake-');
+  const scratch = tmpDir('ac-scratch-');
+  process.env.FAKE_CLAUDE_STATE = state;
+  const cfg = { claudeBin: FAKE_CLAUDE, scratchDir: scratch, maxConcurrent: 4, ...config };
+  const yaml = Object.entries(cfg)
+    .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
+    .join('\n');
+  const t = makeApp({ 'config.yaml': yaml, ...files });
+  const calls = (): { argv: string[]; cwd: string; env: Record<string, string>; stdin: string; sessionId: string; error?: string }[] => {
+    try {
+      return fs
+        .readFileSync(path.join(state, 'calls.jsonl'), 'utf8')
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map((l) => JSON.parse(l));
+    } catch {
+      return [];
+    }
+  };
+  const channel = async (name = 'main', dir?: string) => (await t.call('POST', '/api/conversations', { kind: 'channel', name, dir })).body;
+  const post = async (threadId: string, text: string, mentions?: unknown) => {
+    const r = await t.call('POST', `/api/threads/${threadId}/messages`, { text, mentions });
+    if (r.status !== 201) throw new Error(`post failed ${r.status}: ${JSON.stringify(r.body)}`);
+    return r.body;
+  };
+  const message = (id: string) => t.ctx.store.getMessage(id)!;
+  const settled = (id: string) => waitFor(() => ['done', 'error', 'cancelled'].includes(message(id).status) && message(id));
+  return { ...t, state, scratch, calls, channel, post, message, settled };
+}

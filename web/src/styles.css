@@ -1185,3 +1185,61 @@ details.step-prompt pre {
     box-shadow: var(--shadow);
   }
 }
+
+/* ---------- highlight.js tokens ---------- */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in {
+  color: #8250df;
+}
+.hljs-string,
+.hljs-attr,
+.hljs-regexp {
+  color: #0a7f4f;
+}
+.hljs-number,
+.hljs-literal {
+  color: #b35900;
+}
+.hljs-comment,
+.hljs-quote {
+  color: var(--faint);
+  font-style: italic;
+}
+.hljs-title,
+.hljs-function .hljs-title,
+.hljs-title.function_ {
+  color: #1f6feb;
+}
+.hljs-type,
+.hljs-class .hljs-title {
+  color: #b35900;
+}
+@media (prefers-color-scheme: dark) {
+  .hljs-keyword,
+  .hljs-selector-tag,
+  .hljs-built_in {
+    color: #c79bff;
+  }
+  .hljs-string,
+  .hljs-attr,
+  .hljs-regexp {
+    color: #7ee2a8;
+  }
+  .hljs-number,
+  .hljs-literal,
+  .hljs-type {
+    color: #ffb86b;
+  }
+  .hljs-title,
+  .hljs-title.function_ {
+    color: #79b8ff;
+  }
+}
+.message-list {
+  display: flex;
+  flex-direction: column;
+}
+.msg-content {
+  min-width: 0;
+}

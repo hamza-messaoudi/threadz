@@ -27,7 +27,6 @@ export function useSse(url: string | null, onEvent: Handler, onOpen?: () => void
     let retry: ReturnType<typeof setTimeout> | undefined;
     let delay = 500;
     let stopped = false;
-    let opened = false;
 
     const connect = () => {
       es = new EventSource(url);
@@ -35,8 +34,8 @@ export function useSse(url: string | null, onEvent: Handler, onOpen?: () => void
       es.addEventListener('ready', () => {
         delay = 500;
         if (trackStatus) setGlobalStatus('open');
-        if (opened) opener.current?.();
-        opened = true;
+        // Refetch on every (re)connect: events sent before the subscription existed are not replayed.
+        opener.current?.();
       });
       es.onmessage = () => {};
       for (const ev of EVENTS) {

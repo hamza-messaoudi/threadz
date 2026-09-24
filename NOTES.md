@@ -41,7 +41,13 @@ Other observations:
 
 ## Cache-hit numbers from real runs
 
-(filled in during later phases)
+All through plain `claude` (no wrapper), model `haiku`, badge = first API call of the turn.
+
+| Phase | Check | Result |
+| --- | --- | --- |
+| 2 | Turn 1 (new session) | 44 % (12,311 read / 15,439 write) — the global prefix is shared |
+| 2 | Turn 2, `--resume` | **99 %** (27,750 read / 399 write) |
+| 2 | Stop during `sleep 40` Bash call | `claude` and the Bash tool's shell (its own process group) both gone 3 s after SIGTERM to the group; message `cancelled` |
 
 ## Memory
 
