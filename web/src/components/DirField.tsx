@@ -1,13 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type DirResult } from '../lib/api.ts';
+import { createDir, createFirst, createOptions, tildify, type CreateOption } from '../lib/dirs.ts';
+import { useAppData } from '../lib/store.tsx';
 
-/** Directory picker backed by the server's index; free-typed paths are not possible. */
+type Row = { kind: 'dir'; dir: DirResult } | { kind: 'create'; opt: CreateOption };
+
+/**
+ * Directory picker backed by the server's index; free-typed paths are not possible. Typing a new
+ * name offers "New folder <name> in <root>", which creates it (with git init) in a configured root.
+ */
 export function DirField({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const { config } = useAppData();
   const [q, setQ] = useState('');
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<DirResult[]>([]);
   const [sel, setSel] = useState(0);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
+  const home = config?.homeDir;
 
   useEffect(() => {
     if (!open) return;
@@ -23,8 +34,24 @@ export function DirField({ value, onChange }: { value: string | null; onChange: 
     };
   }, [q, open]);
 
-  const pick = (d: DirResult) => {
-    onChange(d.path);
+  const found: Row[] = items.map((dir) => ({ kind: 'dir' as const, dir }));
+  const creates: Row[] = createOptions(q, config?.dirRoots ?? [], items).map((opt) => ({ kind: 'create' as const, opt }));
+  const rows = createFirst(q, items) ? [...creates, ...found] : [...found, ...creates];
+
+  const pick = async (row: Row) => {
+    setError(null);
+    if (row.kind === 'dir') onChange(row.dir.path);
+    else {
+      setBusy(true);
+      try {
+        onChange((await createDir(row.opt)).path);
+      } catch (e: any) {
+        setError(e.message);
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
     setOpen(false);
     setQ('');
   };
@@ -32,8 +59,15 @@ export function DirField({ value, onChange }: { value: string | null; onChange: 
   if (value && !open)
     return (
       <div className="dir-value">
-        <code title={value}>{value}</code>
-        <button type="button" className="link" onClick={() => { setOpen(true); setTimeout(() => input.current?.focus()); }}>
+        <code title={value}>{tildify(value, home)}</code>
+        <button
+          type="button"
+          className="link"
+          onClick={() => {
+            setOpen(true);
+            setTimeout(() => input.current?.focus());
+          }}
+        >
           Change
         </button>
         <button type="button" className="link" onClick={() => onChange(null)}>
@@ -51,27 +85,61 @@ export function DirField({ value, onChange }: { value: string | null; onChange: 
         onFocus={() => setOpen(true)}
         onBlur={() => setTimeout(() => setOpen(false), 150)}
         onKeyDown={(e) => {
-          if (e.key === 'ArrowDown') { e.preventDefault(); setSel((sel + 1) % Math.max(items.length, 1)); }
-          else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((sel - 1 + items.length) % Math.max(items.length, 1)); }
-          else if (e.key === 'Enter' && items[sel]) { e.preventDefault(); pick(items[sel]); }
-          else if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); }
+          if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setSel((sel + 1) % Math.max(rows.length, 1));
+          } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setSel((sel - 1 + rows.length) % Math.max(rows.length, 1));
+          } else if (e.key === 'Enter' && rows[sel]) {
+            e.preventDefault();
+            pick(rows[sel]);
+          } else if (e.key === 'Escape') {
+            e.stopPropagation();
+            setOpen(false);
+          }
         }}
-        placeholder="Search known directories…"
+        placeholder="Search your folders, or type a new name…"
         spellCheck={false}
+        disabled={busy}
       />
       {open && (
         <div className="dir-dropdown">
-          {items.map((d, i) => (
-            <button type="button" key={d.path} className={`dd-item ${i === sel ? 'sel' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(d)}>
-              <span className="dd-title">
-                {d.name} {d.branch && <span className="branch">{d.branch}</span>} {d.recent && <span className="dd-kind">recent</span>}
-              </span>
-              <span className="dd-sub">{d.path}</span>
-            </button>
-          ))}
-          {!items.length && <div className="dd-empty">No matching directory. Add roots to dirRoots in config.yaml, then rescan in Settings.</div>}
+          {rows.map((row, i) =>
+            row.kind === 'dir' ? (
+              <button type="button" key={row.dir.path} className={`dd-item ${i === sel ? 'sel' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(row)}>
+                <span className="dd-title">
+                  {row.dir.name} {row.dir.branch && <span className="branch">{row.dir.branch}</span>} {row.dir.recent && <span className="dd-kind">recent</span>}
+                </span>
+                <span className="dd-sub">{tildify(row.dir.path, home)}</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                key={`create:${row.opt.root}`}
+                className={`dd-item create ${i === sel ? 'sel' : ''}`}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(row)}
+              >
+                <span className="dd-title">
+                  <span className="plus">＋</span> New folder “{row.opt.name}”
+                </span>
+                <span className="dd-sub">
+                  Creates {tildify(row.opt.root, home).replace(/\/+$/, '')}/{row.opt.name} and runs git init
+                </span>
+              </button>
+            ),
+          )}
+          {!rows.length && (
+            <div className="dd-empty">
+              {config?.dirRoots.length
+                ? 'Type a folder name to find it, or to create a new one.'
+                : 'No folders indexed. Add dirRoots to config.yaml to search and create folders.'}
+            </div>
+          )}
         </div>
       )}
+      {error && <small className="error-text">{error}</small>}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { Hono } from 'hono';
 import { setCookie } from 'hono/cookie';
@@ -131,6 +132,8 @@ export function configPayload(cfg: LoadedConfig) {
     })),
     problems: cfg.problems,
     claudeBin: cfg.config.claudeBin,
+    dirRoots: cfg.config.dirRoots,
+    homeDir: os.homedir(),
     scratchDir: cfg.config.scratchDir,
     defaultModel: cfg.config.defaultModel,
   };
@@ -325,6 +328,11 @@ export function createApp(opts: AppOptions = {}) {
   // ---- directories ----
   app.get('/api/dirs', (c) => c.json(dirIndex.search(c.req.query('q') ?? '')));
   app.post('/api/dirs/rescan', (c) => c.json({ count: dirIndex.rescan() }));
+  app.post('/api/dirs', async (c) => {
+    const body = await c.req.json();
+    const out = dirIndex.create(String(body.root ?? ''), String(body.name ?? '').trim(), body.git !== false);
+    return c.json(out, out.created ? 201 : 200);
+  });
 
   // ---- paragraph threads ----
   app.post('/api/threads', async (c) => {

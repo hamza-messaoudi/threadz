@@ -1,11 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, type Conversation } from '../lib/api.ts';
 import { navigate } from '../lib/router.ts';
 import { useAppData } from '../lib/store.tsx';
+import { createDir, slugify, tildify } from '../lib/dirs.ts';
 import { DirField } from './DirField.tsx';
 
 export function NewChannelDialog({ onClose }: { onClose: () => void }) {
-  const { upsertConversation } = useAppData();
+  const { upsertConversation, config } = useAppData();
   const [name, setName] = useState('');
   const [dir, setDir] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +39,7 @@ export function NewChannelDialog({ onClose }: { onClose: () => void }) {
         <label className="field">
           <span>Directory (optional)</span>
           <DirField value={dir} onChange={setDir} />
+          <FolderSuggestion name={name} roots={config?.dirRoots ?? []} home={config?.homeDir} hidden={!!dir} onCreated={setDir} onError={setError} />
           <small className="muted">Agents run here unless a message tags another directory. Empty = scratch folder.</small>
         </label>
         {error && <div className="error-text">{error}</div>}
@@ -51,5 +53,47 @@ export function NewChannelDialog({ onClose }: { onClose: () => void }) {
         </div>
       </form>
     </div>
+  );
+}
+
+/** One-click "start a fresh project folder" named after the channel, when no folder is picked yet. */
+function FolderSuggestion(props: { name: string; roots: string[]; home?: string; hidden: boolean; onCreated: (p: string) => void; onError: (e: string) => void }) {
+  const slug = slugify(props.name);
+  const [exists, setExists] = useState(false);
+  const root = props.roots[0];
+  useEffect(() => {
+    if (!slug || !root) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      const res = await api.get<{ path: string }[]>(`/api/dirs?q=${encodeURIComponent(slug)}`);
+      if (!cancelled) setExists(res.some((r) => r.path === `${root.replace(/\/+$/, '')}/${slug}`));
+    }, 150);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [slug, root]);
+  if (props.hidden || !slug || !root) return null;
+  const target = `${tildify(root, props.home).replace(/\/+$/, '')}/${slug}`;
+  return (
+    <button
+      type="button"
+      className="folder-suggestion"
+      onClick={async () => {
+        try {
+          props.onCreated((await createDir({ root, name: slug })).path);
+        } catch (e: any) {
+          props.onError(e.message);
+        }
+      }}
+    >
+      {exists ? (
+        <>Use existing folder <code>{target}</code></>
+      ) : (
+        <>
+          <span className="plus">＋</span> Start a new project folder <code>{target}</code> <span className="muted">(git init)</span>
+        </>
+      )}
+    </button>
   );
 }

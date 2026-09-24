@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api, type Conversation, type DirResult, type Mention } from '../lib/api.ts';
+import { createDir, createFirst, createOptions, tildify, type CreateOption } from '../lib/dirs.ts';
 import { agentColor, useAppData } from '../lib/store.tsx';
 
 interface Props {
@@ -17,6 +18,8 @@ interface Item {
   label: string;
   sub: string;
   badge?: string | null;
+  /** "New folder" row: creates the folder, then inserts it as a directory chip. */
+  create?: CreateOption;
 }
 
 interface Trigger {
@@ -164,7 +167,16 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
       .get<DirResult[]>(`/api/dirs?q=${encodeURIComponent(trigger.query)}`)
       .then((res) => {
         if (cancelled) return;
-        setItems(res.map((d) => ({ kind: 'dir', id: d.path, label: `#${d.name}`, sub: d.path, badge: d.branch })));
+        const home = config?.homeDir;
+        const found: Item[] = res.map((d) => ({ kind: 'dir' as const, id: d.path, label: `#${d.name}`, sub: tildify(d.path, home), badge: d.branch }));
+        const creates: Item[] = createOptions(trigger.query, config?.dirRoots ?? [], res).map((opt) => ({
+            kind: 'dir' as const,
+            id: `create:${opt.root}`,
+            label: `＋ New folder “${opt.name}”`,
+            sub: `Creates ${tildify(opt.root, home).replace(/\/+$/, '')}/${opt.name} and runs git init`,
+            create: opt,
+          }));
+        setItems(createFirst(trigger.query, res) ? [...creates, ...found] : [...found, ...creates]);
         setSel(0);
       })
       .catch(() => !cancelled && setItems([]));
@@ -194,8 +206,17 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
     detectTrigger();
   };
 
-  const choose = (it: Item) => {
+  const choose = async (it: Item) => {
     if (!trigger) return;
+    if (it.create) {
+      try {
+        const d = await createDir(it.create);
+        it = { kind: 'dir', id: d.path, label: `#${d.name}`, sub: d.path };
+      } catch (e: any) {
+        setError(e.message);
+        return;
+      }
+    }
     const el = ref.current!;
     if (it.kind === 'dir') {
       // One directory per message: a new one replaces the old chip.
@@ -302,13 +323,17 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
           {items.map((it, i) => (
             <button key={`${it.kind}:${it.id}`} className={`dd-item ${i === sel ? 'sel' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => choose(it)}>
               <span className="dd-title">
-                <span style={it.kind === 'agent' ? { color: agentColor(it.id) } : undefined}>{it.kind === 'dir' ? basename(it.id) : it.label}</span>
+                <span style={it.kind === 'agent' ? { color: agentColor(it.id) } : undefined}>{it.kind === 'dir' && !it.create ? basename(it.id) : it.label}</span>
                 {it.badge && <span className={it.kind === 'dir' ? 'branch' : 'dd-kind'}>{it.badge}</span>}
               </span>
               {it.sub && <span className="dd-sub">{it.sub}</span>}
             </button>
           ))}
-          {!items.length && <div className="dd-empty">{trigger.char === '@' ? 'No matching agent or workflow' : 'No matching directory'}</div>}
+          {!items.length && (
+            <div className="dd-empty">
+              {trigger.char === '@' ? 'No matching agent or workflow' : config?.dirRoots.length ? 'Type a folder name to find it, or to create a new one' : 'No matching directory'}
+            </div>
+          )}
         </div>
       )}
       <div className={`composer ${conversation?.yolo ? 'yolo' : ''}`}>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { api, type Conversation, type Mention, type Message } from '../lib/api.ts';
+import { tildify } from '../lib/dirs.ts';
 import { navigate, type Route } from '../lib/router.ts';
 import { useAppData } from '../lib/store.tsx';
 import { useThread } from '../lib/useThread.ts';
@@ -32,7 +33,7 @@ function MissingConversation({ id, route }: { id: string; route: Route }) {
 
 /** Draft view for "New chat": the chat is created (and named) when the first message is sent. */
 function NewChat() {
-  const { upsertConversation } = useAppData();
+  const { upsertConversation, config } = useAppData();
   const send = async (text: string, mentions: Mention[]) => {
     const c = await api.post<Conversation>('/api/conversations', { kind: 'chat' });
     await api.post(`/api/threads/${c.rootThreadId}/messages`, { text, mentions });
@@ -48,7 +49,10 @@ function NewChat() {
         <div className="messages-scroll">
           <div className="empty-state">
             <h3>Start a chat</h3>
-            <p className="muted">Tag an agent with @ or a workflow. Chats run in the scratch folder unless you tag a directory with #.</p>
+            <p className="muted">
+              Tag an agent with <strong>@</strong> or a workflow. Chats run in the scratch folder unless you tag a folder with <strong>#</strong>; type a
+              new name after # to create a fresh project folder{config?.dirRoots[0] ? ` in ${tildify(config.dirRoots[0], config.homeDir)}` : ''}.
+            </p>
           </div>
         </div>
         <Composer draftKey="new-chat" conversation={null} defaultAgent={null} placeholder="Message a new chat…" onSend={send} autoFocus />

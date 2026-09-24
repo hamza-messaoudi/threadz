@@ -123,6 +123,8 @@ export interface ConfigInfo {
   problems: { file: string; message: string }[];
   claudeBin: string;
   scratchDir: string;
+  dirRoots: string[];
+  homeDir: string;
   defaultModel: string;
 }
 

@@ -84,6 +84,7 @@ Agent and workflow names share one `@` namespace, so they must be unique.
 
 - `@agent` tags run in parallel. An untagged message goes to the last agent that replied in the thread; the hint under the composer shows where it will go.
 - `#dir` picks a directory from the index (`dirRoots` plus channel and recent directories). Free-typed paths are not accepted.
+- To start a new project, type a folder name that doesn't exist yet after `#`, or in a channel's directory picker. The first choice is then **＋ New folder "name"**, which creates the folder inside your first `dirRoots` entry, runs `git init` and selects it. The New channel dialog also offers **Start a new project folder** named after the channel. Folders can only be created inside `dirRoots`, and names are limited to letters, digits, `.`, `-` and `_`.
 - Select text in any finished message and click **Thread** to open a side thread on that paragraph. The agent's session is forked, so it knows the earlier discussion, and the main timeline is not affected.
 - **YOLO** (composer switch) lets agents change files and run write actions in that conversation. It is off by default.
 - Ctrl+K / ⌘K searches every message. You can add filters: `in:#channel`, `from:@agent`, `from:me`.

@@ -1304,3 +1304,25 @@ details.step-prompt pre {
   white-space: nowrap;
   min-width: 0;
 }
+.plus {
+  color: var(--accent);
+  font-weight: 700;
+}
+.dd-item.create .dd-title {
+  color: var(--accent);
+}
+.folder-suggestion {
+  align-self: flex-start;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--muted);
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin-top: 2px;
+}
+.folder-suggestion:hover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--accent-soft);
+}

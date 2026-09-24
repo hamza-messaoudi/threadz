@@ -86,3 +86,36 @@ describe('dir mentions', () => {
     expect(t.ctx.store.recentDirs()[0].path).toBe(other);
   });
 });
+
+describe('creating folders', () => {
+  it('creates a folder with git init in a configured root and makes it taggable', async () => {
+    const root = tmpDir();
+    const t = makeFakeApp({ 'agents/r.md': agentFile('r') }, { dirRoots: [root] });
+    cleanup.push(() => t.ctx.close());
+    const res = await t.call('POST', '/api/dirs', { root, name: 'fresh-api' });
+    expect(res.status).toBe(201);
+    const p = path.join(root, 'fresh-api');
+    expect(res.body).toMatchObject({ path: p, name: 'fresh-api', created: true });
+    expect(fs.existsSync(path.join(p, '.git'))).toBe(true);
+    expect(t.ctx.dirs.isKnown(p)).toBe(true);
+    expect((await t.call('GET', '/api/dirs?q=fresh')).body[0].path).toBe(p);
+
+    // Usable at once as a channel dir and as a #dir mention.
+    expect((await t.call('POST', '/api/conversations', { kind: 'channel', name: 'fresh', dir: p })).status).toBe(201);
+    // Existing folder: just returned.
+    expect((await t.call('POST', '/api/dirs', { root, name: 'fresh-api' })).status).toBe(200);
+  });
+
+  it('refuses folders outside dirRoots and unsafe names', async () => {
+    const root = tmpDir();
+    const t = makeFakeApp({}, { dirRoots: [root] });
+    cleanup.push(() => t.ctx.close());
+    expect((await t.call('POST', '/api/dirs', { root: tmpDir(), name: 'x' })).status).toBe(400);
+    for (const name of ['../escape', 'a/b', '.hidden', '', 'x'.repeat(101), 'sp ace']) {
+      expect((await t.call('POST', '/api/dirs', { root, name })).status).toBe(400);
+    }
+    expect(fs.readdirSync(root)).toEqual([]);
+    fs.writeFileSync(path.join(root, 'afile'), '');
+    expect((await t.call('POST', '/api/dirs', { root, name: 'afile' })).status).toBe(409);
+  });
+});
