@@ -55,6 +55,7 @@ All through plain `claude` (no wrapper), model `haiku`, badge = first API call o
 | 4 | ADO work item / GitHub PR reads | **not run**: neither MCP server is configured on this machine (see Q8) |
 | 5 | Selection spanning two paragraphs (browser) | snapped to paragraph 1; panel opened with that quote; URL `?thread=` |
 | 5 | First thread reply (untagged → source agent) | forked, **98 %**; answered with a detail only in the earlier main discussion (MySQL/PostgreSQL indexing) |
+| 6 | `@researcher #repo-b what does this repo do?` (browser, `#` dropdown) | ran with cwd `repo-b`, marker "new session in repo-b", answered from its README |
 | 2 | Stop during `sleep 40` Bash call | `claude` and the Bash tool's shell (its own process group) both gone 3 s after SIGTERM to the group; message `cancelled` |
 
 ## Memory

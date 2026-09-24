@@ -48,6 +48,12 @@ export function Settings() {
         Config is read from <code>~/.config/agent-chat/</code> and reloads on save. The app never writes it. Claude binary: <code>{config?.claudeBin}</code>
       </p>
 
+      <p>
+        <button className="btn small" onClick={async () => { const r = await api.post<{ count: number }>('/api/dirs/rescan'); alert(`Directory index: ${r.count} projects found.`); }}>
+          Rescan directories
+        </button>
+      </p>
+
       <h3>Agents</h3>
       <table className="gate-table">
         <tbody>

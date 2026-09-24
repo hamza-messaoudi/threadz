@@ -657,6 +657,7 @@ pre {
   background: var(--accent-soft);
 }
 .block-gutter {
+  user-select: none;
   position: absolute;
   left: -30px;
   top: 0;
@@ -1265,4 +1266,41 @@ details.step-prompt pre {
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+.dir-picker {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+.dir-picker input {
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--bg);
+}
+.dir-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  padding: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+  z-index: 60;
+}
+.dir-value {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+}
+.dir-value code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }

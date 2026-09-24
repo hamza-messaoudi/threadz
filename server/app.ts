@@ -17,6 +17,7 @@ import { TurnRunner } from './runner/turn.ts';
 import { compileGate, writeGate } from './gate/compile.ts';
 import { classifyInventory, readToolList } from './gate/inventory.ts';
 import { blocksOf } from './context/blocks.ts';
+import { DirIndex } from './dirs/index.ts';
 import type { MessageRow, ThreadRow } from './db/queries.ts';
 
 export interface DirService {
@@ -142,6 +143,10 @@ export function createApp(opts: AppOptions = {}) {
   syncGate();
   ctx.onConfig(syncGate);
   ctx.runner = new TurnRunner(ctx);
+  const dirIndex = new DirIndex(ctx);
+  ctx.dirs = dirIndex;
+  dirIndex.rescan();
+  ctx.onConfig(() => dirIndex.rescanIfRootsChanged());
 
   const app = new Hono();
   app.use('*', guard(ctx.token, () => ctx.port));
@@ -276,6 +281,10 @@ export function createApp(opts: AppOptions = {}) {
     return c.json({ dir, mcpServers, rows: classifyInventory(tools, compileGate(ctx.cfg.readonly)) });
   });
 
+  // ---- directories ----
+  app.get('/api/dirs', (c) => c.json(dirIndex.search(c.req.query('q') ?? '')));
+  app.post('/api/dirs/rescan', (c) => c.json({ count: dirIndex.rescan() }));
+
   // ---- paragraph threads ----
   app.post('/api/threads', async (c) => {
     const body = await c.req.json();
@@ -352,11 +361,9 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
-/** Phase 1: a plain validated path. Phase 6 replaces this with the directory index. */
+/** Directories come only from the index (never a free-typed path); null clears it. */
 export function validateDirInput(ctx: AppContext, dir: unknown): string | null {
   if (dir === null || dir === undefined || dir === '') return null;
-  if (typeof dir !== 'string') throw Object.assign(new Error('dir must be a string'), { status: 400 });
-  const abs = path.resolve(dir.replace(/^~(?=$|\/)/, process.env.HOME ?? '~'));
-  if (!fs.existsSync(abs) || !fs.statSync(abs).isDirectory()) throw Object.assign(new Error(`not a directory: ${dir}`), { status: 400 });
-  return abs;
+  if (typeof dir !== 'string' || !ctx.dirs.isKnown(dir)) throw new HttpError(400, `unknown directory: ${String(dir)}`);
+  return dir;
 }
