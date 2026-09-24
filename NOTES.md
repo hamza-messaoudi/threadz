@@ -180,3 +180,12 @@ Pinned: `comark` 0.7.0, `@comark/react` 0.7.0, `tailwindcss` / `@tailwindcss/vit
 - Renders are queued, one at a time, because each re-initialises Mermaid with the theme of its own frame. SVGs are cached by (source hash, theme); switching theme renders again from the cache key.
 - **Content cannot configure Mermaid:** `%%{init}%%` directives and front-matter `config:` are stripped before rendering (only `title:` is read, for the frame), and `secure` lists the theme and security keys as well. This closes `themeCSS` injection into the SVG's `<style>`.
 - `suppressErrorRendering: true` plus a `parse()` before `render()` keeps Mermaid's error graphic out of the page; the frame shows the source and the first line of the error.
+
+### Phase 7 findings
+
+- The catalog (`server/prompts/comark-graphs.md`) is 7.2 KB, about 2,400 tokens at a pessimistic 3 characters per token; the test bounds it at 12,000 characters (4,000 tokens). Every example in it parses and renders without an empty or fallback frame (tested). mdxcn's own Comark examples were compacted to flow-style YAML; two of them are invalid YAML upstream (`graph-diff` and `graph-invoice` put a mapping on the key's line: `footer:   label: shipped`).
+- The fake Claude's session list is not safe for two new sessions started at the same instant (one resume then fails as "missing"); tests that count calls per agent post one agent per turn. The pre-existing `context.test.ts` "reverse order" check (processes started < 400 ms apart) is timing-sensitive and failed once in ~10 full runs under load.
+- **Real runs** (`claude -p --model sonnet`, Claude Code 2.1.281, same `--append-system-prompt` as the runner builds: agent body + catalog; tools disabled). Replies saved as `test/fixtures/markdown/realrun-*.md` and checked by `test/visual/realrun.spec.ts`:
+  - five PRs by size and review time: prose, one `::graph-table` (with a derived "h per 100 lines" column), prose, and a caveat about the small sample. Renders with no fallback frame.
+  - login sequence with the token exchange: a Mermaid `sequenceDiagram` with a front-matter title; renders.
+  - three-step deploy: `::graph-flow` with three nodes, then a numbered list. (It opened with the figure rather than prose.)

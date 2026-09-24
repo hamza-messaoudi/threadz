@@ -171,7 +171,7 @@ export class TurnRunner {
 
     const spawnAgent = agent.raw
       ? { model: agent.model }
-      : { model: agent.model ?? cfg.config.defaultModel, systemPrompt: agent.body };
+      : { model: agent.model ?? cfg.config.defaultModel, systemPrompt: agent.body, render: agent.render };
     const mode: SpawnMode = { settingsPath: paths.gateSettings, partial: true };
     const bin = cfg.config.claudeBin;
     const hash = flagsHash(bin, spawnAgent, mode, req.cwd);

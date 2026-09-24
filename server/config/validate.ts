@@ -62,6 +62,8 @@ export function validateAgent(data: unknown, body: string, file: string, fallbac
   const fm = isObj(data) ? data : {};
   const name = str(fm.name, 'name', false) ?? fallbackName;
   if (!NAME_RE.test(name)) throw new ConfigError(`invalid agent name "${name}"`);
+  const render = str(fm.render, 'render', false);
+  if (render !== undefined && render !== 'graphs') throw new ConfigError(`"render" must be "graphs" (got "${render}")`);
   let tools = fm.tools;
   if (typeof tools === 'string') tools = tools.split(',').map((t) => t.trim()).filter(Boolean);
   return {
@@ -69,6 +71,7 @@ export function validateAgent(data: unknown, body: string, file: string, fallbac
     description: str(fm.description, 'description', false) ?? '',
     model: str(fm.model, 'model', false),
     tools: strList(tools, 'tools'),
+    ...(render ? { render } : {}),
     body: body.trim(),
     file,
   };

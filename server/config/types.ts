@@ -15,6 +15,8 @@ export interface AgentDef {
   description: string;
   model?: string;
   tools?: string[];
+  /** `graphs`: the Comark figure catalog is appended to the system prompt. */
+  render?: 'graphs';
   body: string;
   file: string;
   /** Built-in plain Claude Code: no --model and no --append-system-prompt. */

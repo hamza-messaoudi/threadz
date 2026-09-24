@@ -101,6 +101,8 @@ export interface AgentInfo {
   tools?: string[];
   /** The built-in neutral agent (plain Claude Code). */
   builtin?: boolean;
+  /** `graphs`: the agent is taught Comark figures. */
+  render?: 'graphs';
 }
 
 export interface RoutineInfo {

@@ -1,5 +1,8 @@
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import { appRoot } from '../paths.ts';
 import { StreamParser, type RunnerEvent } from './parse.ts';
 
 export interface SpawnAgent {
@@ -7,6 +10,18 @@ export interface SpawnAgent {
   model?: string;
   /** Omitted or empty = no --append-system-prompt. */
   systemPrompt?: string;
+  /** `graphs`: append the figure catalog (server/prompts/comark-graphs.md) after the agent body. */
+  render?: 'graphs';
+}
+
+let graphsPrompt: string | null = null;
+/** The figure catalog, read once. Constant text, so prompt caching works as usual. */
+export function comarkGraphsPrompt(): string {
+  return (graphsPrompt ??= fs.readFileSync(path.join(appRoot, 'server', 'prompts', 'comark-graphs.md'), 'utf8').trim());
+}
+
+function systemPromptOf(agent: SpawnAgent): string {
+  return [agent.systemPrompt, agent.render === 'graphs' ? comarkGraphsPrompt() : ''].filter((p) => p && p.trim()).join('\n\n');
 }
 
 export interface SessionArgs {
@@ -27,7 +42,8 @@ export function buildArgs(agent: SpawnAgent, session: SessionArgs, mode: SpawnMo
   const args = ['-p', '--output-format', 'stream-json', '--verbose'];
   if (mode.partial) args.push('--include-partial-messages');
   if (agent.model) args.push('--model', agent.model);
-  if (agent.systemPrompt) args.push('--append-system-prompt', agent.systemPrompt);
+  const system = systemPromptOf(agent);
+  if (system) args.push('--append-system-prompt', system);
   args.push('--settings', mode.settingsPath, '--permission-mode', 'bypassPermissions');
   if (session.resume) {
     args.push('--resume', session.resume);

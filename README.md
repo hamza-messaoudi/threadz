@@ -46,9 +46,12 @@ name: researcher
 description: Digs into topics and cites sources
 model: sonnet
 tools: [Read, Grep, WebSearch, "mcp__ado__*"]   # optional, enforced by the gate in every mode
+render: graphs                                   # optional: teach it figures and Mermaid diagrams
 ---
 You are a research agent...
 ```
+
+`render: graphs` appends a figure catalog (`server/prompts/comark-graphs.md`, about 2,500 tokens) to that agent's system prompt, so it can answer with `::graph-*` figures and Mermaid diagrams where they help. The text is constant, so prompt caching is unaffected; turning it on starts a new session once ("agent config changed"). The style lab's **prompt** tab shows the exact text.
 
 There is also a built-in agent, `@claude`, that needs no file. It is plain Claude Code: it runs without `--model` or `--append-system-prompt`, so it uses the model from your own Claude Code settings plus your usual `CLAUDE.md`, skills and MCP servers. It still goes through the read-only gate until you switch YOLO on. To change it, create `agents/claude.md`, which replaces the built-in agent.
 

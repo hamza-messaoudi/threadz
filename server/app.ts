@@ -116,7 +116,7 @@ export class AppContext {
 
 export function configPayload(cfg: LoadedConfig) {
   return {
-    agents: Object.values(cfg.agents).map((a) => ({ name: a.name, description: a.description, model: a.model, tools: a.tools, builtin: !!a.raw })),
+    agents: Object.values(cfg.agents).map((a) => ({ name: a.name, description: a.description, model: a.model, tools: a.tools, builtin: !!a.raw, render: a.render })),
     workflows: Object.values(cfg.workflows).map((w) => ({
       name: w.name,
       description: w.description,

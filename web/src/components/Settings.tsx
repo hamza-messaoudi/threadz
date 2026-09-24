@@ -64,6 +64,7 @@ export function Settings() {
             <tr key={a.name}>
               <td>
                 <strong>@{a.name}</strong> {a.builtin && <span className="dd-kind">built-in</span>}
+                {a.render === 'graphs' && <span className="dd-kind" title="render: graphs — writes figures and diagrams">figures</span>}
               </td>
               <td>{a.description}</td>
               <td>
