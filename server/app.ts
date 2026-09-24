@@ -8,7 +8,7 @@ import { loadConfig } from './config/load.ts';
 import type { LoadedConfig } from './config/types.ts';
 import { watchConfig } from './config/watch.ts';
 import { defaultAgent, HttpError, postUserMessage } from './core/dispatch.ts';
-import { serializeConversation, serializeMessage } from './core/serialize.ts';
+import { serializeConversation, serializeMessage, serializeRun } from './core/serialize.ts';
 import { openDb } from './db/migrate.ts';
 import { Store } from './db/queries.ts';
 import { Hub } from './hub.ts';
@@ -18,6 +18,7 @@ import { compileGate, writeGate } from './gate/compile.ts';
 import { classifyInventory, readToolList } from './gate/inventory.ts';
 import { blocksOf } from './context/blocks.ts';
 import { DirIndex } from './dirs/index.ts';
+import { WorkflowEngine } from './core/workflows.ts';
 import type { MessageRow, ThreadRow } from './db/queries.ts';
 
 export interface DirService {
@@ -25,7 +26,7 @@ export interface DirService {
 }
 
 export interface WorkflowService {
-  start(opts: { workflow: string; thread: ThreadRow; trigger: MessageRow; cwd: string; mentions: unknown }): { id: string };
+  start(opts: { workflow: string; thread: ThreadRow; trigger: MessageRow | null; cwd: string; mentions: unknown; input?: string }): { id: string };
 }
 
 export interface AppOptions {
@@ -43,11 +44,7 @@ export class AppContext {
   readonly token: string;
   runner!: TurnRunner;
   dirs: DirService = { isKnown: () => false };
-  workflows: WorkflowService = {
-    start: () => {
-      throw new HttpError(400, 'workflows are not available yet');
-    },
-  };
+  workflows!: WorkflowEngine;
   private stops: (() => void)[] = [];
   private configListeners: ((cfg: LoadedConfig) => void)[] = [];
 
@@ -143,6 +140,7 @@ export function createApp(opts: AppOptions = {}) {
   syncGate();
   ctx.onConfig(syncGate);
   ctx.runner = new TurnRunner(ctx);
+  ctx.workflows = new WorkflowEngine(ctx);
   const dirIndex = new DirIndex(ctx);
   ctx.dirs = dirIndex;
   dirIndex.rescan();
@@ -239,6 +237,12 @@ export function createApp(opts: AppOptions = {}) {
       },
       messages: store.listMessages(thread.id).map(serializeMessage),
       defaultAgent: defaultAgent(ctx, thread),
+      runs: Object.fromEntries(
+        [...new Set(store.listMessages(thread.id).map((m) => m.run_id).filter((x): x is string => !!x))]
+          .map((id) => store.getRun(id))
+          .filter((r) => !!r)
+          .map((r) => [r!.id, serializeRun(r!)]),
+      ),
       sourceMessage: thread.parent_message_id ? serializeMessage(store.getMessage(thread.parent_message_id)!) : null,
       childThreads: store.childThreadSummaries(thread.id).map((t) => ({
         id: t.id,
@@ -253,6 +257,15 @@ export function createApp(opts: AppOptions = {}) {
   app.post('/api/threads/:id/messages', async (c) => {
     const body = await c.req.json();
     return c.json(postUserMessage(ctx, c.req.param('id'), body), 201);
+  });
+
+  app.post('/api/runs/:id/retry', (c) => {
+    ctx.workflows.retry(c.req.param('id'));
+    return c.json({ ok: true });
+  });
+  app.post('/api/runs/:id/cancel', (c) => {
+    ctx.workflows.cancel(c.req.param('id'));
+    return c.json({ ok: true });
   });
 
   app.post('/api/messages/:id/cancel', (c) => {

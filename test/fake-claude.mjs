@@ -7,6 +7,7 @@
 //   FAKE_DELAY=<ms>   wait before replying        FAKE_REPLY=<text>  reply text
 //   FAKE_FAIL         exit 1 with an error result FAKE_TOOL=<name>   emit one tool call first
 //   FAKE_HANG         never finish (for cancel tests)
+//   FAKE_FAIL_IF_EXISTS=<path>  fail only while that file exists
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -88,7 +89,8 @@ async function main() {
   if (delay) await sleep(delay);
   if (/FAKE_HANG/.test(directives)) await sleep(60_000);
 
-  if (/FAKE_FAIL/.test(directives)) {
+  const failFile = directive('FAKE_FAIL_IF_EXISTS');
+  if (failFile ? fs.existsSync(failFile) : /FAKE_FAIL(?!_IF)/.test(directives)) {
     process.stderr.write('fake failure requested\n');
     out({ type: 'result', subtype: 'error_during_execution', is_error: true, session_id: sessionId, errors: ['fake failure'], usage });
     process.exit(1);

@@ -56,6 +56,7 @@ All through plain `claude` (no wrapper), model `haiku`, badge = first API call o
 | 5 | Selection spanning two paragraphs (browser) | snapped to paragraph 1; panel opened with that quote; URL `?thread=` |
 | 5 | First thread reply (untagged → source agent) | forked, **98 %**; answered with a detail only in the earlier main discussion (MySQL/PostgreSQL indexing) |
 | 6 | `@researcher #repo-b what does this repo do?` (browser, `#` dropdown) | ran with cwd `repo-b`, marker "new session in repo-b", answered from its README |
+| 7 | `@research-to-brief the history of SQLite` in a new chat (browser) | card "done · 2 steps"; researcher bullets then writer brief built on them; both new sessions (59 % / 58 %, global prefix only) |
 | 2 | Stop during `sleep 40` Bash call | `claude` and the Bash tool's shell (its own process group) both gone 3 s after SIGTERM to the group; message `cancelled` |
 
 ## Memory
