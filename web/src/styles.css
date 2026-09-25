@@ -426,6 +426,50 @@ pre {
   background: var(--side-active);
   font-weight: 600;
 }
+.side-item-row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+/* Archive: appears on hover at the row's end; armed, it turns red and waits for a second click. */
+.side-archive {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  translate: 0 -50%;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+  color: var(--faint);
+  opacity: 0;
+  transition:
+    opacity 150ms ease,
+    color 150ms ease,
+    background-color 150ms ease;
+}
+.side-archive svg {
+  width: 14px;
+  height: 14px;
+}
+.side-item-row:hover .side-archive,
+.side-archive:focus-visible,
+.side-item-row.armed .side-archive {
+  opacity: 1;
+}
+.side-item-row:hover .side-item {
+  padding-right: 30px;
+}
+.side-archive:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
+}
+.side-item-row.armed .side-archive {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
 .side-name {
   flex: 1;
   min-width: 0;
@@ -652,6 +696,138 @@ pre {
   font-size: 16px;
   margin: 0;
   white-space: nowrap;
+}
+/* The name, edited in place: reads as a heading until hovered or focused. */
+.conv-title {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.conv-title-field {
+  display: inline-grid;
+  min-width: 0;
+  margin-left: -6px;
+}
+.conv-title-field::after,
+.conv-title-field input {
+  grid-area: 1 / 1;
+  font: inherit;
+  padding: 1px 5px;
+  white-space: pre;
+}
+.conv-title-field::after {
+  content: attr(data-value);
+  border: 1px solid transparent;
+  visibility: hidden;
+  overflow: hidden;
+}
+.conv-title-field input {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  outline: none;
+  text-overflow: ellipsis;
+  transition:
+    background-color 150ms ease,
+    border-color 150ms ease;
+}
+.conv-title-field input:hover {
+  background: var(--bg-hover);
+}
+.conv-title-field input:focus {
+  background: var(--bg);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.conv-title-field input.is-error {
+  border-color: var(--danger);
+}
+/* A channel's folder: the path, and a pencil that shows on hover. */
+.dir-edit {
+  position: relative;
+  min-width: 0;
+  margin-left: -6px;
+}
+.dir-edit-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+.dir-edit-btn.empty .dir-edit-path {
+  font-family: var(--font);
+  color: var(--faint);
+}
+.dir-edit-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dir-edit-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--faint);
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.dir-edit-icon svg {
+  width: 13px;
+  height: 13px;
+}
+.dir-edit-btn:hover,
+.dir-edit-btn[aria-expanded='true'] {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.dir-edit-btn:hover .dir-edit-icon,
+.dir-edit-btn[aria-expanded='true'] .dir-edit-icon,
+.dir-edit-btn:focus-visible .dir-edit-icon {
+  opacity: 1;
+}
+.dir-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  width: min(420px, 70vw);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  transform-origin: top left;
+  animation: floating-thread-in 200ms var(--panel-ease);
+}
+.dir-pop-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--muted);
+}
+.dir-pop-head .link {
+  color: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .dir-pop {
+    animation: none;
+  }
 }
 .conv-dir.moved {
   color: var(--accent);
@@ -981,12 +1157,17 @@ pre {
 }
 
 /* markdown blocks */
+/* A thread's passage hangs on a thin rail; the open one glows faintly from it. */
 .block {
   position: relative;
-  border-left: 3px solid transparent;
+  border-left: 2px solid transparent;
   margin-left: -11px;
-  padding-left: 8px;
-  border-radius: 2px;
+  padding-left: 9px;
+  border-radius: 0 4px 4px 0;
+  --rail: color-mix(in srgb, var(--accent) 38%, transparent);
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease;
 }
 .block > :first-child {
   margin-top: 0;
@@ -998,75 +1179,143 @@ pre {
   margin-top: 8px;
 }
 .block.has-thread {
-  border-left-color: var(--accent);
+  border-left-color: var(--rail);
   cursor: pointer;
 }
+.block.has-thread:hover,
 .block.active-source {
-  background: var(--accent-soft);
+  --rail: var(--accent);
 }
-/* Picked for a new thread, before the thread is opened. */
+.block.active-source {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 9%, transparent), color-mix(in srgb, var(--accent) 3%, transparent) 70%, transparent);
+}
+/* Picked for a new thread, before the thread is opened: a neutral highlight, like a selection that stays. */
 .block.pending-passage {
-  border-left-color: color-mix(in srgb, var(--accent) 55%, var(--bg));
-  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+  --rail: color-mix(in srgb, var(--text) 45%, transparent);
+  border-left-color: var(--rail);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--text) 6%, transparent), color-mix(in srgb, var(--text) 2%, transparent) 70%, transparent);
+}
+/* About to reply to this block: it lights up like a pick. */
+.block:has(> .block-gutter:hover):not(.pending-passage) {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--text) 4%, transparent), transparent 70%);
 }
 /* A passage of several blocks reads as one bracket: the rail bridges the gap to the block above. */
 .block.rail-join::before,
 .block.pending-join::before {
   content: '';
   position: absolute;
-  left: -3px;
+  left: -2px;
   bottom: 100%;
-  width: 3px;
+  width: 2px;
   height: 2rem;
-  background: var(--accent);
+  background: var(--rail);
+  pointer-events: none;
+  transition: background-color 200ms ease;
+}
+.block.pending-join::after {
+  /* Fill the gap between picked blocks too, so the highlight reads as one passage. */
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 100%;
+  height: 1rem;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--text) 6%, transparent), color-mix(in srgb, var(--text) 2%, transparent) 70%, transparent);
   pointer-events: none;
 }
-.block.pending-join::before {
-  background: color-mix(in srgb, var(--accent) 55%, var(--bg));
+/* Same heights as the block gaps in markdown.css. */
+.md-body > .block.pending-join:has(> .md-root > .comark-content > :is(figure, .md-figure))::after,
+.md-body > [data-block]:has(> .md-root > .comark-content > :is(figure, .md-figure)) + .block.pending-join::after,
+.md-body > .block.pending-join:has(> .md-root > .comark-content > h3)::after {
+  height: 1.5rem;
+}
+.md-body > .block.pending-join:has(> .md-root > .comark-content > h2)::after {
+  height: 2rem;
 }
 .block-gutter {
   user-select: none;
   position: absolute;
-  left: -30px;
+  left: -32px;
   top: 0;
   opacity: 0;
-  width: 20px;
-  height: 20px;
-  border-radius: 4px;
-  font-size: 12px;
-  color: var(--muted);
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  color: var(--faint);
   display: flex;
   align-items: center;
   justify-content: center;
+  transform: translateX(3px);
+  transition:
+    opacity 150ms ease,
+    transform 200ms var(--panel-ease),
+    color 150ms ease,
+    background-color 150ms ease;
 }
-.block:hover .block-gutter {
+.block:hover .block-gutter,
+.block-gutter:focus-visible {
   opacity: 1;
+  transform: none;
 }
 .block-gutter:hover {
   background: var(--bg-hover);
-  color: var(--accent);
+  color: var(--text);
 }
+@media (prefers-reduced-motion: reduce) {
+  .block-gutter {
+    transform: none;
+  }
+}
+/* Under a thread's passage: its replies, in the step rows' voice. */
 .thread-badge {
   display: flex;
   width: fit-content;
+  max-width: 100%;
   gap: 6px;
   align-items: center;
-  font-size: 11.5px;
+  margin-top: 4px;
+  padding: 1px 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.thread-badge-icon {
+  display: inline-flex;
+  flex: none;
   color: var(--accent);
-  margin-top: 2px;
-  font-weight: 600;
 }
-.thread-badge .muted {
-  font-weight: 400;
+.thread-badge-count {
+  color: var(--text);
+  font-weight: 500;
+  transition: color 150ms ease;
 }
-.thread-badge:hover {
-  text-decoration: underline;
+.thread-badge-meta {
+  color: var(--faint);
+  white-space: nowrap;
+}
+.thread-badge-meta::before {
+  content: '·';
+  margin-right: 6px;
+}
+.thread-badge:hover .thread-badge-count {
+  color: var(--accent);
 }
 /* The thread became its own channel: the badge leads there. */
-.thread-badge.to-channel .channel-link {
-  background: var(--accent-soft);
-  border-radius: 4px;
-  padding: 0 5px;
+.thread-badge-field {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 0 7px;
+  transition: border-color 150ms ease;
+}
+.thread-badge:hover .thread-badge-field {
+  border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
 }
 /* An agent turn's steps: Thinking and tool rows between its paragraphs, folded once it answers. */
 .turn-step {
@@ -2091,9 +2340,9 @@ pre {
 }
 .quote {
   margin: 10px 16px 4px;
-  border-left: 3px solid var(--accent);
-  background: var(--bg-soft);
-  border-radius: 4px;
+  border-left: 2px solid var(--accent);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 9%, transparent), color-mix(in srgb, var(--accent) 3%, transparent) 70%, transparent);
+  border-radius: 0 6px 6px 0;
   padding: 6px 10px;
   font-size: 13px;
 }
@@ -2121,7 +2370,7 @@ pre {
   margin: 0 14px 8px;
   padding: 6px 6px 6px 10px;
   border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
+  border-left: 2px solid var(--accent);
   border-radius: 6px;
   background: var(--bg-soft);
   font-size: 12.5px;
@@ -2155,20 +2404,86 @@ pre {
 .thread-panel .msg {
   padding: 6px 14px 6px 36px;
 }
-.floating-thread-btn .count {
-  font-weight: 400;
-  opacity: 0.75;
+.thread-panel .conv-head .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
 }
+/* Reset / Delete: icon only until armed, then the question in red. */
+.confirm-btn {
+  color: var(--muted);
+}
+.confirm-btn:hover:not(:disabled) {
+  color: var(--text);
+}
+.confirm-btn.armed,
+.confirm-btn.armed:hover {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+.confirm-text {
+  animation: confirm-in 200ms var(--panel-ease);
+}
+@keyframes confirm-in {
+  from {
+    opacity: 0;
+    filter: blur(2px);
+    transform: translateX(-3px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .confirm-text {
+    animation: none;
+  }
+}
+.floating-thread-btn:disabled {
+  cursor: default;
+  color: var(--muted);
+}
+.floating-thread-btn:disabled .step-icon {
+  color: var(--faint);
+}
+/* Over a picked passage: a step row lifted onto a card. */
 .floating-thread-btn {
   position: fixed;
   z-index: 30;
-  background: var(--text);
-  color: var(--bg);
-  border-radius: 6px;
-  padding: 3px 10px;
-  font-size: 12px;
-  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 6px 5px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
   box-shadow: var(--shadow);
+  transform-origin: 50% 100%;
+  animation: floating-thread-in 200ms var(--panel-ease);
+  transition: border-color 150ms ease;
+}
+.floating-thread-btn .step-icon {
+  color: var(--accent);
+}
+.floating-thread-btn .floating-thread-label {
+  font-weight: 500;
+}
+.floating-thread-btn .step-arg {
+  font-size: 12px;
+}
+.floating-thread-btn:hover {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-strong));
+}
+@keyframes floating-thread-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.96);
+    filter: blur(2px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .floating-thread-btn {
+    animation: none;
+  }
 }
 
 /* ---------- workflow card ---------- */

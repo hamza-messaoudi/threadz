@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type Conversation, type Mention } from '../lib/api.ts';
 import { agentColor } from '../lib/store.tsx';
 import { useThread } from '../lib/useThread.ts';
@@ -7,6 +7,7 @@ import { Composer } from './Composer.tsx';
 import { MessageSkeleton, SkeletonReveal, SwapText, useResizeHeight } from './transitions.tsx';
 import { ScrollArea } from './ConversationView.tsx';
 import { MessageList, type Passage } from './MessageList.tsx';
+import { ICONS } from './icons.tsx';
 import { PromoteThreadDialog } from './PromoteThreadDialog.tsx';
 import { navigate } from '../lib/router.ts';
 import type { PresencePhase } from '../lib/usePresence.ts';
@@ -51,6 +52,14 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
   const [promoting, setPromoting] = useState(false);
   const [nudgeOff, setNudgeOff] = useState(() => nudgeDismissed(threadId));
   const replies = t.messages.filter((m) => m.authorKind !== 'system').length;
+  const busy = t.messages.some((m) => m.status === 'queued' || m.status === 'streaming');
+
+  // Merged into another thread by a wider pick, or deleted (here or in another tab).
+  useEffect(() => {
+    if (!t.gone) return;
+    if (t.gone.into) navigate({ view: 'conversation', conversationId: conversation.id, threadId: t.gone.into }, true);
+    else onClose();
+  }, [t.gone]);
 
   // The thread became a channel (here or in another tab; old links too): follow it there.
   useEffect(() => {
@@ -90,12 +99,33 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
         <span className="conv-dir">{conversation.kind === 'chat' ? conversation.name : `#${conversation.name}`}</span>
         <span className="spacer" />
         {info && (
+          <ConfirmButton
+            icon={ICONS.reset}
+            label="Reset"
+            confirm={`Clear ${replies} ${replies === 1 ? 'reply' : 'replies'}?`}
+            tooltip="Start over: clears the replies. Agents pick up from the main conversation again."
+            disabled={!replies || busy}
+            onConfirm={() => api.post(`/api/threads/${threadId}/reset`)}
+          />
+        )}
+        {info && (
+          <ConfirmButton
+            icon={ICONS.trash}
+            label="Delete"
+            confirm="Delete thread?"
+            tooltip="Delete this thread and its replies"
+            disabled={busy}
+            onConfirm={() => api.del(`/api/threads/${threadId}`)}
+          />
+        )}
+        {info && (
           <button className="btn ghost small" onClick={() => setPromoting(true)} data-tooltip="Give this thread its own channel. Agents keep their sessions.">
-            ⇱ Make channel
+            {ICONS.hash}
+            Make channel
           </button>
         )}
         <button className="btn ghost" onClick={onClose} data-tooltip="Close (Esc)" aria-label="Close thread">
-          ✕
+          {ICONS.close}
         </button>
       </header>
       {info?.blockText && (
@@ -140,7 +170,7 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
               setNudgeOff(true);
             }}
           >
-            ✕
+            {ICONS.close}
           </button>
         </div>
       )}
@@ -148,5 +178,31 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
       </div>
       {promoting && info && <PromoteThreadDialog thread={info} from={conversation} onClose={() => setPromoting(false)} />}
     </aside>
+  );
+}
+
+/** An icon action that asks once: the first click arms it for a few seconds and says what it will do, the second one acts. */
+function ConfirmButton({ icon, label, confirm, tooltip, disabled, onConfirm }: { icon: ReactNode; label: string; confirm: string; tooltip: string; disabled?: boolean; onConfirm: () => Promise<unknown> }) {
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 3000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  return (
+    <button
+      className={`btn ghost small confirm-btn ${armed ? 'armed' : ''}`}
+      disabled={disabled}
+      data-tooltip={armed ? undefined : tooltip}
+      aria-label={armed ? confirm : label}
+      onClick={() => {
+        if (!armed) return setArmed(true);
+        setArmed(false);
+        onConfirm().catch(() => {});
+      }}
+    >
+      {icon}
+      {armed && <span className="confirm-text">{confirm}</span>}
+    </button>
   );
 }

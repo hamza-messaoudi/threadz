@@ -91,12 +91,10 @@ describe('paragraph threads', () => {
     expect(call.stdin).toContain('<thread_context>');
   });
 
-  it('a thread can quote a run of paragraphs, next to the single-paragraph threads inside it', async () => {
+  it('a thread can quote a run of paragraphs', async () => {
     const { t, ch, m } = await setup();
-    const single = await t.call('POST', '/api/threads', { message_id: m.id, block_index: 1 });
     const range = await t.call('POST', '/api/threads', { message_id: m.id, block_index: 1, block_end: 2 });
     expect(range.status).toBe(201);
-    expect(range.body.id).not.toBe(single.body.id);
     expect((await t.call('POST', '/api/threads', { message_id: m.id, block_index: 1, block_end: 2 })).body.id).toBe(range.body.id);
     expect(t.ctx.store.getThread(range.body.id)!.block_text).toBe('Second paragraph about **indexes**.\n\n- item one\n- item two');
     for (const bad of [{ block_index: 2, block_end: 1 }, { block_index: 1, block_end: 3 }, { block_index: 0, block_end: 1.5 }])
@@ -105,13 +103,123 @@ describe('paragraph threads', () => {
     const info = (await t.call('GET', `/api/threads/${range.body.id}`)).body.thread;
     expect([info.blockIndex, info.blockEnd]).toEqual([1, 2]);
     const kids = (await t.call('GET', `/api/threads/${ch.rootThreadId}`)).body.childThreads.map((c: any) => [c.blockIndex, c.blockEnd]);
-    expect(kids).toEqual(expect.arrayContaining([[1, 1], [1, 2]]));
+    expect(kids).toEqual([[1, 2]]);
 
     const r = await t.post(range.body.id, 'compare these');
     await t.settled(r.agentMessageIds[0]);
     const stdin = t.calls()[1].stdin;
     expect(stdin).toContain('on these 2 consecutive passages');
     expect(stdin).toContain('> Second paragraph about **indexes**.\n> \n> - item one');
+  });
+
+  it('a pick inside a thread opens it; a pick over it widens it, and its session learns once, by appending', async () => {
+    const { t, ch, m } = await setup();
+    const th = (await t.call('POST', '/api/threads', { message_id: m.id, block_index: 1 })).body;
+    const r1 = await t.settled((await t.post(th.id, 'why indexes?')).agentMessageIds[0]);
+
+    const wide = await t.call('POST', '/api/threads', { message_id: m.id, block_index: 0, block_end: 2 });
+    expect(wide.status).toBe(200);
+    expect(wide.body).toMatchObject({ id: th.id, created: false, widened: true, absorbed: [] });
+    expect(t.ctx.store.getThread(th.id)).toMatchObject({ block_index: 0, block_end: 2 });
+    // Every block now belongs to that one thread: picking any of them opens it unchanged.
+    const inside = await t.call('POST', '/api/threads', { message_id: m.id, block_index: 2 });
+    expect(inside.body).toMatchObject({ id: th.id, widened: false });
+    const kids = (await t.call('GET', `/api/threads/${ch.rootThreadId}`)).body.childThreads;
+    expect(kids.map((c: any) => [c.id, c.blockIndex, c.blockEnd])).toEqual([[th.id, 0, 2]]);
+    expect((await t.call('GET', `/api/threads/${th.id}`)).body.messages.at(-1).meta).toMatchObject({ kind: 'merged', threads: 0 });
+
+    // Same session, resumed: the wider passage is appended ahead of the message, not re-seeded.
+    const r2 = await t.settled((await t.post(th.id, 'and the first one?')).agentMessageIds[0]);
+    const call = t.calls().at(-1)!;
+    expect(call.argv.slice(-2)).toEqual(['--resume', r1.session_id]);
+    expect(call.stdin).toMatch(/^<thread_context_update>\nThe user widened the passage/);
+    expect(call.stdin).toContain('on these 3 consecutive passages');
+    expect(call.stdin).not.toContain('why indexes?');
+    expect(JSON.parse(r2.markers!)).toEqual(['caught up on the merged thread']);
+    // Sent once.
+    await t.settled((await t.post(th.id, 'thanks')).agentMessageIds[0]);
+    expect(t.calls().at(-1)!.stdin).not.toContain('<thread_context_update>');
+  });
+
+  it('merging threads keeps the busiest one and tells each kept session only what it missed', async () => {
+    const { t, ch, m } = await setup();
+    const a = (await t.call('POST', '/api/threads', { message_id: m.id, block_index: 0 })).body;
+    const b = (await t.call('POST', '/api/threads', { message_id: m.id, block_index: 2 })).body;
+    const ra = await t.settled((await t.post(a.id, 'about caches')).agentMessageIds[0]);
+    await t.settled((await t.post(a.id, 'more on caches')).agentMessageIds[0]);
+    const wb = await t.settled((await t.post(b.id, '@w list it', [{ kind: 'agent', id: 'w', start: 0, end: 2 }])).agentMessageIds[0]);
+
+    const merged = await t.call('POST', '/api/threads', { message_id: m.id, block_index: 1 , block_end: 2 });
+    // Block 1 touches neither thread: only b grows. Now pick over both.
+    expect(merged.body).toMatchObject({ id: b.id, widened: true, absorbed: [] });
+    const all = await t.call('POST', '/api/threads', { message_id: m.id, block_index: 0, block_end: 1 });
+    expect(all.body).toMatchObject({ id: a.id, widened: true, absorbed: [b.id] });
+    expect(t.ctx.store.getThread(b.id)).toBeUndefined();
+    expect(t.ctx.store.getThread(a.id)).toMatchObject({ block_index: 0, block_end: 2 });
+    const data = (await t.call('GET', `/api/threads/${a.id}`)).body;
+    expect(data.messages.filter((x: any) => x.authorKind !== 'system').map((x: any) => x.content)).toEqual([
+      'about caches', 'First paragraph about caches.\n\nSecond paragraph about **indexes**.\n\n- item one\n- item two',
+      'more on caches', 'First paragraph about caches.\n\nSecond paragraph about **indexes**.\n\n- item one\n- item two',
+      '@w list it', 'writer here',
+    ]);
+    expect((await t.call('GET', `/api/threads/${ch.rootThreadId}`)).body.childThreads.map((c: any) => c.id)).toEqual([a.id]);
+
+    // r resumes its own session and hears only b's side of it.
+    await t.settled((await t.post(a.id, '@r thoughts?', [{ kind: 'agent', id: 'r', start: 0, end: 2 }])).agentMessageIds[0]);
+    const rc = t.calls().at(-1)!;
+    expect(rc.argv.slice(-2)).toEqual(['--resume', ra.session_id]);
+    expect(rc.stdin).toContain('The user merged another side thread into this one');
+    expect(rc.stdin).toContain('[you ');
+    expect(rc.stdin).toContain('@w list it');
+    expect(rc.stdin).toContain('agent:w');
+    expect(rc.stdin).not.toContain('more on caches');
+    // w keeps b's session and hears a's side, r's replies included.
+    await t.settled((await t.post(a.id, '@w and you?', [{ kind: 'agent', id: 'w', start: 0, end: 2 }])).agentMessageIds[0]);
+    const wc = t.calls().at(-1)!;
+    expect(wc.argv.slice(-2)).toEqual(['--resume', wb.session_id]);
+    expect(wc.stdin).toContain('more on caches');
+    expect(wc.stdin).toContain('agent:r');
+    expect(wc.stdin).not.toContain('@w list it');
+    expect(wc.stdin.match(/@r thoughts\?/g)).toHaveLength(1);
+  });
+
+  it('reset empties a thread and its next turn forks the main conversation again; delete removes it', async () => {
+    const { t, ch, m } = await setup();
+    const th = (await t.call('POST', '/api/threads', { message_id: m.id, block_index: 1 })).body;
+    const r1 = await t.settled((await t.post(th.id, 'why indexes?')).agentMessageIds[0]);
+    expect((await t.call('POST', `/api/threads/${ch.rootThreadId}/reset`)).status).toBe(400);
+
+    expect((await t.call('POST', `/api/threads/${th.id}/reset`)).status).toBe(200);
+    expect((await t.call('GET', `/api/threads/${th.id}`)).body.messages).toEqual([]);
+    expect(t.ctx.store.threadSessions(th.id)).toEqual([]);
+    const r2 = await t.settled((await t.post(th.id, 'fresh start')).agentMessageIds[0]);
+    const call = t.calls().at(-1)!;
+    expect(call.argv.slice(-3)).toEqual(['--resume', m.session_id, '--fork-session']);
+    expect(call.stdin).not.toContain('why indexes');
+    expect(r2.session_id).not.toBe(r1.session_id);
+
+    expect((await t.call('DELETE', `/api/threads/${th.id}`)).status).toBe(200);
+    expect(t.ctx.store.getThread(th.id)).toBeUndefined();
+    expect((await t.call('GET', `/api/threads/${ch.rootThreadId}`)).body.childThreads).toEqual([]);
+    expect(t.ctx.store.getMessage(r2.id)).toBeUndefined();
+  });
+
+  it('refuses to merge into a channel or while a reply is being written', async () => {
+    const t = makeFakeApp({ 'agents/r.md': agentFile('r', `FAKE_REPLY=${REPLY}`), 'agents/slow.md': agentFile('slow', 'FAKE_HANG') });
+    cleanup.push(() => t.ctx.close());
+    const ch = await t.channel();
+    const m = await t.settled((await t.post(ch.rootThreadId, '@r explain', [{ kind: 'agent', id: 'r', start: 0, end: 2 }])).agentMessageIds[0]);
+    const a = (await t.call('POST', '/api/threads', { message_id: m.id, block_index: 0 })).body;
+    const b = (await t.call('POST', '/api/threads', { message_id: m.id, block_index: 2 })).body;
+    await t.call('POST', `/api/threads/${b.id}/promote`, { name: 'lists' });
+    expect((await t.call('POST', '/api/threads', { message_id: m.id, block_index: 1, block_end: 2 })).status).toBe(409);
+    expect((await t.call('POST', '/api/threads', { message_id: m.id, block_index: 2 })).body.id).toBe(b.id);
+
+    const slow = await t.post(a.id, '@slow x', [{ kind: 'agent', id: 'slow', start: 0, end: 5 }]);
+    expect((await t.call('POST', '/api/threads', { message_id: m.id, block_index: 0, block_end: 1 })).status).toBe(409);
+    expect((await t.call('POST', `/api/threads/${a.id}/reset`)).status).toBe(409);
+    t.ctx.runner.cancelAll();
+    await t.settled(slow.agentMessageIds[0]);
   });
 
   it('refuses threads on unfinished messages', async () => {

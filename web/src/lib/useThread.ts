@@ -4,6 +4,8 @@ import { useSse } from './sse.ts';
 
 export interface ThreadState {
   loading: boolean;
+  /** This thread was deleted (null) or merged into another thread (its id). */
+  gone?: { into: string | null };
   error: string | null;
   data: (ThreadData & { defaultAgent: string | null }) | null;
   messages: Message[];
@@ -19,6 +21,8 @@ type Action =
   | { type: 'tool'; id: string; toolEvents: Message['toolEvents'] }
   | { type: 'thinking'; id: string; thinkingId: string; at: number; seq: number; text: string }
   | { type: 'thread'; child: ChildThread }
+  | { type: 'unthread'; id: string }
+  | { type: 'gone'; into: string | null }
   | { type: 'run'; run: Run }
   | { type: 'moved'; cwd: string; moved: boolean }
   | { type: 'promoted'; conversationId: string };
@@ -73,6 +77,10 @@ function reducer(s: ThreadState, a: Action): ThreadState {
       const rest = s.childThreads.filter((t) => t.id !== a.child.id);
       return { ...s, childThreads: [...rest, a.child] };
     }
+    case 'unthread':
+      return { ...s, childThreads: s.childThreads.filter((t) => t.id !== a.id) };
+    case 'gone':
+      return { ...s, gone: { into: a.into } };
     case 'run':
       return { ...s, runs: { ...s.runs, [a.run.id]: a.run } };
     case 'moved':
@@ -107,6 +115,11 @@ export function useThread(threadId: string | null) {
       else if (event === 'message.tool') dispatch({ type: 'tool', id: d.id, toolEvents: d.toolEvents });
       else if (event === 'message.thinking') dispatch({ type: 'thinking', id: d.id, thinkingId: d.thinkingId, at: d.at, seq: d.seq, text: d.text });
       else if (event === 'thread.created') dispatch({ type: 'thread', child: d });
+      else if (event === 'thread.removed') dispatch({ type: 'unthread', id: d.id });
+      else if (event === 'thread.merged' && d.id === threadId) dispatch({ type: 'gone', into: d.into });
+      else if (event === 'thread.deleted' && d.id === threadId) dispatch({ type: 'gone', into: null });
+      // The passage grew, or the replies were cleared: reload the thread as it is now.
+      else if ((event === 'thread.passage' || event === 'thread.reset') && d.id === threadId) load();
       else if (event === 'run.updated') dispatch({ type: 'run', run: d });
       else if (event === 'thread.updated' && d.id === threadId) dispatch({ type: 'moved', cwd: d.cwd, moved: d.moved });
       else if (event === 'thread.promoted' && d.id === threadId) dispatch({ type: 'promoted', conversationId: d.conversationId });

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, type Conversation, type RoutineInfo } from '../lib/api.ts';
 import { navigate } from '../lib/router.ts';
 import { useSseStatus } from '../lib/sse.ts';
@@ -123,6 +123,7 @@ const PANEL_CLOSE = `${PANEL}M16 15l-3-3 3-3`;
 const PANEL_OPEN = `${PANEL}M14 9l3 3-3 3`;
 const SEARCH = 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-4.3-4.3';
 const CHAT = 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12zM12 9v6M9 12h6';
+const ARCHIVE = 'M3 4h18v4H3zM5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4';
 const HASH = 'M4 9h16M4 15h16M10 3 8 21M16 3l-2 18';
 const GEAR =
   'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z';
@@ -160,12 +161,35 @@ function Section(props: { title: string; onAdd?: () => void; addLabel?: string; 
 }
 
 function Item({ c, active, prefix }: { c: Conversation; active: boolean; prefix: string }) {
+  const { upsertConversation } = useAppData();
+  // Archive asks once: the first click arms the icon for a few seconds, the second one archives.
+  const [armed, setArmed] = useState(false);
+  useEffect(() => {
+    if (!armed) return;
+    const t = setTimeout(() => setArmed(false), 3000);
+    return () => clearTimeout(t);
+  }, [armed]);
+  const archive = async () => {
+    if (!armed) return setArmed(true);
+    upsertConversation(await api.patch<Conversation>(`/api/conversations/${c.id}`, { archived: true }));
+    if (active) navigate({ view: 'home' });
+  };
   return (
-    <button className={`side-item ${active ? 'active' : ''}`} onClick={() => navigate({ view: 'conversation', conversationId: c.id })}>
-      {prefix && <span className="hash">{prefix}</span>}
-      <span className="side-name">{c.name}</span>
-      {c.yolo && <span className="yolo-dot" data-tooltip="YOLO on" />}
-    </button>
+    <div className={`side-item-row ${armed ? 'armed' : ''}`} onMouseLeave={() => setArmed(false)}>
+      <button className={`side-item ${active ? 'active' : ''}`} onClick={() => navigate({ view: 'conversation', conversationId: c.id })}>
+        {prefix && <span className="hash">{prefix}</span>}
+        <span className="side-name">{c.name}</span>
+        {c.yolo && <span className="yolo-dot" data-tooltip="YOLO on" />}
+      </button>
+      <button
+        className="side-archive"
+        onClick={archive}
+        data-tooltip={armed ? 'Click again to archive. Messages stay searchable.' : 'Archive'}
+        aria-label={armed ? `Confirm archive ${c.name}` : `Archive ${c.name}`}
+      >
+        <Icon d={ARCHIVE} />
+      </button>
+    </div>
   );
 }
 

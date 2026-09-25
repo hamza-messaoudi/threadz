@@ -7,7 +7,7 @@ export type DB = Database.Database;
 
 // Each entry is one migration; index + 1 is the schema version it produces.
 // schema.sql is version 1. Append new plain-SQL files here, never edit old ones.
-const MIGRATIONS = ['schema.sql', '002-thread-ranges.sql', '003-thread-dir.sql', '004-thread-promote.sql'];
+const MIGRATIONS = ['schema.sql', '002-thread-ranges.sql', '003-thread-dir.sql', '004-thread-promote.sql', '005-session-pending.sql'];
 
 export function openDb(file: string): DB {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });

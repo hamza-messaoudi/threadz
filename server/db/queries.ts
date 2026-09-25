@@ -62,6 +62,8 @@ export interface SessionRow {
   last_seen_seq: number;
   flags_hash: string;
   updated_at: number;
+  /** Context to send once ahead of the next turn (see 005-session-pending.sql). */
+  pending: string | null;
 }
 
 export interface RunRow {
@@ -203,6 +205,50 @@ export class Store {
     return this.getConversation(id)!;
   }
 
+  /** Side threads quoting blocks of this message (channels made from them included). */
+  threadsOnMessage(messageId: string): ThreadRow[] {
+    return this.db.prepare(`SELECT * FROM threads WHERE parent_message_id = ? ORDER BY block_index`).all(messageId) as ThreadRow[];
+  }
+
+  /** Whether a turn is queued or running in the thread. */
+  threadBusy(threadId: string): boolean {
+    return !!this.db.prepare(`SELECT 1 FROM messages WHERE thread_id = ? AND status IN ('queued', 'streaming') LIMIT 1`).get(threadId);
+  }
+
+  /**
+   * Folds side threads into `into`, which then quotes blocks start..end. Their messages and runs move
+   * over (ids are time-ordered, so the replies interleave); `sessions` are the agent sessions `into`
+   * keeps from now on, all others of these threads are dropped.
+   */
+  mergeThreads(into: string, absorbed: string[], passage: { start: number; end: number; text: string }, sessions: SessionRow[]): void {
+    const all = [into, ...absorbed];
+    const q = all.map(() => '?').join(', ');
+    this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM agent_sessions WHERE thread_id IN (${q})`).run(...all);
+      for (const id of absorbed) {
+        this.db.prepare(`UPDATE messages SET thread_id = ? WHERE thread_id = ?`).run(into, id);
+        this.db.prepare(`UPDATE runs SET thread_id = ? WHERE thread_id = ?`).run(into, id);
+        this.db.prepare(`DELETE FROM threads WHERE id = ?`).run(id);
+      }
+      this.db.prepare(`UPDATE threads SET block_index = ?, block_end = ?, block_text = ? WHERE id = ?`).run(passage.start, passage.end, passage.text, into);
+      const put = this.db.prepare(
+        `INSERT INTO agent_sessions (thread_id, agent_id, cwd, claude_session_id, last_seen_seq, flags_hash, updated_at, pending)
+         VALUES (@thread_id, @agent_id, @cwd, @claude_session_id, @last_seen_seq, @flags_hash, @updated_at, @pending)`,
+      );
+      for (const s of sessions) put.run({ ...s, thread_id: into });
+    })();
+  }
+
+  /** Empties a side thread: its replies, runs and agent sessions go; with `drop`, the thread itself too. */
+  clearThread(id: string, drop = false): void {
+    this.db.transaction(() => {
+      this.db.prepare(`DELETE FROM agent_sessions WHERE thread_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM messages WHERE thread_id = ?`).run(id);
+      this.db.prepare(`DELETE FROM runs WHERE thread_id = ?`).run(id);
+      if (drop) this.db.prepare(`DELETE FROM threads WHERE id = ?`).run(id);
+    })();
+  }
+
   setThreadDir(id: string, dir: string | null): void {
     this.db.prepare(`UPDATE threads SET dir = ? WHERE id = ?`).run(dir, id);
   }
@@ -329,16 +375,25 @@ export class Store {
       .get(threadId, agentId, cwd) as SessionRow | undefined;
   }
 
-  upsertSession(s: Omit<SessionRow, 'updated_at'>): void {
+  /** Writing a session means its turn started, so any pending context has been sent: it is cleared. */
+  upsertSession(s: Omit<SessionRow, 'updated_at' | 'pending'>): void {
     this.db
       .prepare(
         `INSERT INTO agent_sessions (thread_id, agent_id, cwd, claude_session_id, last_seen_seq, flags_hash, updated_at)
          VALUES (@thread_id, @agent_id, @cwd, @claude_session_id, @last_seen_seq, @flags_hash, @updated_at)
          ON CONFLICT (thread_id, agent_id, cwd) DO UPDATE SET
            claude_session_id = excluded.claude_session_id, last_seen_seq = excluded.last_seen_seq,
-           flags_hash = excluded.flags_hash, updated_at = excluded.updated_at`,
+           flags_hash = excluded.flags_hash, updated_at = excluded.updated_at, pending = NULL`,
       )
       .run({ ...s, updated_at: Date.now() });
+  }
+
+  clearPending(threadId: string, agentId: string, cwd: string): void {
+    this.db.prepare(`UPDATE agent_sessions SET pending = NULL WHERE thread_id = ? AND agent_id = ? AND cwd = ?`).run(threadId, agentId, cwd);
+  }
+
+  threadSessions(threadId: string): SessionRow[] {
+    return this.db.prepare(`SELECT * FROM agent_sessions WHERE thread_id = ? ORDER BY updated_at DESC`).all(threadId) as SessionRow[];
   }
 
   /** The agent's most recently used session in this thread in another directory (before a move). */

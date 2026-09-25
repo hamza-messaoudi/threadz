@@ -1,14 +1,15 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { api, type Conversation, type Mention, type Message, type ThreadData } from '../lib/api.ts';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { api, type ChildThread, type Conversation, type Mention, type Message, type ThreadData } from '../lib/api.ts';
 import { tildify } from '../lib/dirs.ts';
 import { navigate, type Route } from '../lib/router.ts';
 import { useAppData } from '../lib/store.tsx';
 import { usePresence } from '../lib/usePresence.ts';
 import { useThread } from '../lib/useThread.ts';
-import { ChannelSettings } from './ChannelSettings.tsx';
+import { DirButton, EditableTitle } from './ConvHeader.tsx';
 import { MessageMarkdown } from '../markdown/MessageMarkdown.tsx';
 import { Composer } from './Composer.tsx';
 import { MessageList, type Passage } from './MessageList.tsx';
+import { ICONS } from './icons.tsx';
 import { ThreadPanel } from './ThreadPanel.tsx';
 import { MessageSkeleton, SkeletonReveal, SwapText, TextsReveal } from './transitions.tsx';
 
@@ -66,9 +67,8 @@ function NewChat() {
 
 function Loaded({ conversation, route }: { conversation: Conversation; route: Route }) {
   const t = useThread(conversation.rootThreadId);
-  const [settings, setSettings] = useState(false);
   const [activeSource, setActiveSource] = useState<Passage | null>(null);
-  // Blocks picked for a new thread (by dragging or shift-clicking 💬), shown with a "Thread" button at x, y.
+  // Blocks picked for a new thread (by dragging or shift-clicking the thread button), shown with a "Thread" button at x, y.
   const [pending, setPending] = useState<(Passage & { anchor: number; x: number; y: number }) | null>(null);
   const messagesRef = useRef(t.messages);
   messagesRef.current = t.messages;
@@ -88,14 +88,17 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
   const openThread = useCallback(
     async (m: Message, start: number, end = start) => {
       setPending(null);
-      const th = await api.post<{ id: string; conversationId: string }>('/api/threads', { message_id: m.id, block_index: start, block_end: end });
+      const th = await api.post<{ id: string; conversationId: string; widened?: boolean }>('/api/threads', { message_id: m.id, block_index: start, block_end: end });
       // The passage's thread has become its own channel.
       if (th.conversationId !== conversation.id) navigate({ view: 'conversation', conversationId: th.conversationId });
-      else if (th.id === openThreadId.current) navigate({ view: 'conversation', conversationId: conversation.id });
+      // A pick that only reopens the open thread closes it; one that grew it keeps it open.
+      else if (th.id === openThreadId.current && !th.widened) navigate({ view: 'conversation', conversationId: conversation.id });
       else navigate({ view: 'conversation', conversationId: conversation.id, threadId: th.id });
     },
     [conversation.id],
   );
+
+  const pick = usePick(pending, t.childThreads);
 
   const threadable = (id: string | undefined) => {
     const m = messagesRef.current.find((x) => x.id === id);
@@ -134,17 +137,17 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
       last = blocks[z];
       const rect = range.getBoundingClientRect();
       const start = Number(first.dataset.block);
-      setPending({ messageId: m.id, start, end: Number(last.dataset.block), anchor: start, x: Math.min(rect.right, window.innerWidth - 190), y: Math.max(rect.top - 34, 8) });
+      setPending({ messageId: m.id, start, end: Number(last.dataset.block), anchor: start, x: Math.min(rect.right, window.innerWidth - 260), y: Math.max(rect.top - 42, 8) });
     }, 0);
   }, []);
 
-  // Shift-click 💬: the first one anchors the passage, each next one moves its other end.
+  // Shift-click the thread button: the first one anchors the passage, each next one moves its other end.
   const extendPassage = useCallback(
     (m: Message, index: number, at: DOMRect) => {
       window.getSelection()?.removeAllRanges();
       setPending((p) => {
         const anchor = p?.messageId === m.id ? p.anchor : activeSource?.messageId === m.id ? activeSource.start : index;
-        return { messageId: m.id, anchor, start: Math.min(anchor, index), end: Math.max(anchor, index), x: at.left, y: Math.max(at.top - 32, 8) };
+        return { messageId: m.id, anchor, start: Math.min(anchor, index), end: Math.max(anchor, index), x: at.left, y: Math.max(at.top - 40, 8) };
       });
     },
     [activeSource],
@@ -170,10 +173,7 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
     <div className={`conversation ${conversation.yolo ? 'yolo' : ''}`}>
       <div className="conv-main">
         <header className="conv-head">
-          <h2>
-            {conversation.kind !== 'chat' && <span className="hash">#</span>}
-            {conversation.name}
-          </h2>
+          <EditableTitle conversation={conversation} />
           {conversation.yolo && <span className="yolo-label">YOLO</span>}
           {t.data?.thread.moved ? (
             <>
@@ -184,10 +184,12 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
                 Move back
               </button>
             </>
+          ) : conversation.kind === 'channel' ? (
+            <DirButton conversation={conversation} />
           ) : (
             conversation.dir && (
               <span className="conv-dir" title={conversation.dir}>
-                {conversation.dir}
+                {tildify(conversation.dir, config?.homeDir)}
               </span>
             )
           )}
@@ -197,9 +199,6 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
               <SwapText text={routine.status === 'running' ? 'Running…' : 'Run now'} />
             </button>
           )}
-          <button className="btn ghost" onClick={() => setSettings(true)}>
-            Settings
-          </button>
         </header>
         <div className="scroll-host" onMouseUp={onMouseUp} onMouseDown={() => setPending(null)}>
         <ScrollArea messages={t.messages} focusId={route.threadId ? undefined : route.messageId}>
@@ -216,7 +215,7 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
                 onExtendPassage={extendPassage}
                 allowThreads
                 activeSource={route.threadId ? activeSource : null}
-                pending={pending}
+                pending={pick}
                 focusId={route.threadId ? undefined : route.messageId}
               />
             )}
@@ -244,10 +243,11 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
           onSource={setActiveSource}
         />
       )}
-      {pending && (
+      {pending && pick && (
         <button
           className="floating-thread-btn"
           style={{ left: pending.x, top: pending.y }}
+          disabled={!!pick.channel}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
             const m = t.messages.find((x) => x.id === pending.messageId);
@@ -255,12 +255,43 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
             if (m) openThread(m, pending.start, pending.end);
           }}
         >
-          💬 Thread{pending.end > pending.start && <span className="count"> · {pending.end - pending.start + 1} paragraphs</span>}
+          <span className="step-icon">{pick.channel ? ICONS.hash : ICONS.thread}</span>
+          {pick.channel ? (
+            <span className="floating-thread-label">Part of this became #{pick.channel}</span>
+          ) : (
+            <>
+              <span className="floating-thread-label">{pick.opens ? 'Open thread' : pick.threads > 1 ? 'Merge threads' : pick.threads ? 'Add to thread' : 'Reply in thread'}</span>
+              <span className="step-arg prose">{pick.end > pick.start ? `${pick.end - pick.start + 1} paragraphs` : '1 paragraph'}</span>
+            </>
+          )}
         </button>
       )}
-      {settings && <ChannelSettings conversation={conversation} onClose={() => setSettings(false)} />}
     </div>
   );
+}
+
+/**
+ * What a pick will become, as the server decides it: a block belongs to one thread only, so the pick
+ * grows over every thread it touches and they merge. A channel made from a thread cannot merge.
+ */
+function usePick(pending: Passage | null, threads: ChildThread[]) {
+  return useMemo(() => {
+    if (!pending) return null;
+    const mine = threads.filter((c) => c.parentMessageId === pending.messageId);
+    let { start, end } = pending;
+    let hit: ChildThread[] = [];
+    for (let grew = true; grew; ) {
+      hit = mine.filter((c) => c.blockIndex <= end && start <= c.blockEnd);
+      const lo = Math.min(start, ...hit.map((c) => c.blockIndex));
+      const hi = Math.max(end, ...hit.map((c) => c.blockEnd));
+      grew = lo !== start || hi !== end;
+      start = lo;
+      end = hi;
+    }
+    const channel = hit.find((c) => c.channel);
+    const opens = hit.length === 1 && hit[0].blockIndex === start && hit[0].blockEnd === end;
+    return { messageId: pending.messageId, start, end, threads: hit.length, opens, channel: channel && !opens ? channel.channel!.name : null };
+  }, [pending, threads]);
 }
 
 /** Top of a channel that grew out of a side thread: the passage it started from, linked back to its place. */

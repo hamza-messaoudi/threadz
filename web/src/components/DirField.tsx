@@ -10,16 +10,20 @@ type Row = { kind: 'dir'; dir: DirResult } | { kind: 'create'; opt: CreateOption
  * Directory picker backed by the server's index; free-typed paths are not possible. Typing a new
  * name offers "New folder <name> in <root>", which creates it (with git init) in a configured root.
  */
-export function DirField({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+export function DirField({ value, onChange, autoFocus }: { value: string | null; onChange: (v: string | null) => void; autoFocus?: boolean }) {
   const { config } = useAppData();
   const [q, setQ] = useState('');
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!autoFocus);
   const [items, setItems] = useState<DirResult[]>([]);
   const [sel, setSel] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const home = config?.homeDir;
+
+  useEffect(() => {
+    if (autoFocus) input.current?.focus();
+  }, []);
 
   useEffect(() => {
     if (!open) return;

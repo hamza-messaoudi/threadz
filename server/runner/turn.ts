@@ -230,6 +230,8 @@ export class TurnRunner {
             last_seen_seq: prep.cursor,
             flags_hash: hash,
           });
+          // A session forked after a move has sent the pending context of the one it came from.
+          if (prep.from) store.clearPending(prep.from.threadId, req.agentName, prep.from.cwd);
           store.updateMessage(msg.id, { session_id: e.sessionId });
           break;
         case 'textDelta':
@@ -339,12 +341,14 @@ export class TurnRunner {
     }
 
     // 1. Resume: send only what this agent has not seen yet.
+    // Pending context (a merge) goes first; like the delta it is appended, so the cached prefix holds.
     if (session) {
       const delta = selectDelta(threadMsgs, req.agentName, session.last_seen_seq, exclude);
+      if (session.pending) markers.push('caught up on the merged thread');
       return {
         kind: 'resume',
         args: { resume: session.claude_session_id },
-        prompt: join(renderUpdate(delta), message),
+        prompt: join(session.pending ?? '', renderUpdate(delta), message),
         cursor: maxSeq(delta, Math.max(triggerSeq, session.last_seen_seq)),
         markers,
         from: { threadId: thread.id, cwd: req.cwd },
@@ -359,7 +363,7 @@ export class TurnRunner {
       return {
         kind: 'fork',
         args: { resume: before.claude_session_id, fork: true },
-        prompt: join(renderUpdate(delta), renderMove(before.cwd, req.cwd), message),
+        prompt: join(before.pending ?? '', renderUpdate(delta), renderMove(before.cwd, req.cwd), message),
         cursor: maxSeq(delta, Math.max(triggerSeq, before.last_seen_seq)),
         markers,
         from: { threadId: thread.id, cwd: before.cwd },

@@ -9,6 +9,7 @@ import { loadConfig } from './config/load.ts';
 import type { LoadedConfig } from './config/types.ts';
 import { watchConfig } from './config/watch.ts';
 import { defaultAgent, HttpError, moveThread, postUserMessage, threadCwd } from './core/dispatch.ts';
+import { openPassage, resetThread } from './core/passages.ts';
 import { serializeConversation, serializeMessage, serializeRun } from './core/serialize.ts';
 import { openDb } from './db/migrate.ts';
 import { Store } from './db/queries.ts';
@@ -392,9 +393,43 @@ export function createApp(opts: AppOptions = {}) {
     const index = Number(body.block_index);
     const end = body.block_end == null ? index : Number(body.block_end);
     if (!Number.isInteger(index) || !Number.isInteger(end) || index < 0 || end < index || end >= blocks.length) return c.json({ error: 'no such paragraph' }, 400);
-    const { thread, created } = store.upsertParagraphThread(msg, index, blocks.slice(index, end + 1).join('\n\n'), end);
-    if (created) publishChildSummary(thread.id);
-    return c.json({ id: thread.id, conversationId: thread.conversation_id, created }, created ? 201 : 200);
+    const { thread, created, absorbed, widened } = openPassage(ctx, msg, index, end, blocks);
+    for (const id of absorbed) {
+      hub.thread(id, 'thread.merged', { id, into: thread.id });
+      hub.thread(parent.id, 'thread.removed', { id });
+    }
+    if (widened) {
+      const note = store.insertMessage({
+        thread_id: thread.id,
+        author_kind: 'system',
+        content_md: absorbed.length ? `Merged ${absorbed.length === 1 ? 'a thread' : `${absorbed.length} threads`} into this one` : 'Passage widened',
+        status: 'done',
+        meta: { kind: 'merged', threads: absorbed.length, start: thread.block_index, end: thread.block_end },
+      });
+      hub.thread(thread.id, 'message.created', serializeMessage(note));
+      hub.thread(thread.id, 'thread.passage', { id: thread.id });
+    }
+    if (created || widened) publishChildSummary(thread.id);
+    return c.json({ id: thread.id, conversationId: thread.conversation_id, created, widened, absorbed }, created ? 201 : 200);
+  });
+
+  // Reset: the thread stays on its passage with no replies; its agents start over from the main conversation.
+  app.post('/api/threads/:id/reset', (c) => {
+    const thread = store.getThread(c.req.param('id'));
+    if (!thread) return c.json({ error: 'not found' }, 404);
+    resetThread(ctx, thread, false);
+    hub.thread(thread.id, 'thread.reset', { id: thread.id });
+    publishChildSummary(thread.id);
+    return c.json({ ok: true });
+  });
+
+  app.delete('/api/threads/:id', (c) => {
+    const thread = store.getThread(c.req.param('id'));
+    if (!thread) return c.json({ error: 'not found' }, 404);
+    resetThread(ctx, thread, true);
+    hub.thread(thread.id, 'thread.deleted', { id: thread.id });
+    hub.thread(thread.parent_thread_id!, 'thread.removed', { id: thread.id });
+    return c.json({ ok: true });
   });
 
   app.get('/api/threads/:id/events', (c) => sse(c, `thread:${c.req.param('id')}`));

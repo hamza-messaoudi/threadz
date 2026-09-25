@@ -9,6 +9,7 @@ import { navigate } from '../lib/router.ts';
 import { MatrixLoader, ThinkingLine } from './motion.tsx';
 import { Accordion, AccChevron, PopNumber, SuccessCheck, SwapText } from './transitions.tsx';
 import { orderSteps, prettyTool, StepRow, StepsSummary, toolSummary, useAnchors, type Step } from './Steps.tsx';
+import { ICONS } from './icons.tsx';
 import { WorkflowCard } from './WorkflowCard.tsx';
 
 export interface MessageProps {
@@ -295,7 +296,7 @@ function useBlockRenderer({ m, childThreads, activeRange, pendingRange, onOpenTh
               else onOpenThread!(m, i);
             }}
           >
-            💬
+            {ICONS.thread}
           </button>
         )}
         {content}
@@ -310,10 +311,16 @@ function useBlockRenderer({ m, childThreads, activeRange, pendingRange, onOpenTh
               else onOpenThread?.(m, t.blockIndex, t.blockEnd);
             }}
           >
-            {t.channel && <span className="channel-link">→ #{t.channel.name}</span>}
-            <PopNumber value={t.replyCount} /> {t.replyCount === 1 ? 'reply' : 'replies'}
-            {t.blockEnd > t.blockIndex && <span className="muted">· {t.blockEnd - t.blockIndex + 1} paragraphs</span>}
-            <span className="muted">· {relTime(t.lastActivity)}</span>
+            <span className="thread-badge-icon">{t.channel ? ICONS.hash : ICONS.reply}</span>
+            {t.channel ? (
+              <span className="thread-badge-field">{t.channel.name}</span>
+            ) : (
+              <span className="thread-badge-count">
+                <PopNumber value={t.replyCount} /> {t.replyCount === 1 ? 'reply' : 'replies'}
+              </span>
+            )}
+            {t.blockEnd > t.blockIndex && <span className="thread-badge-meta">{t.blockEnd - t.blockIndex + 1} paragraphs</span>}
+            <span className="thread-badge-meta">{relTime(t.lastActivity)}</span>
           </button>
         ))}
       </div>
@@ -424,6 +431,7 @@ function SystemMessage({ m, run }: MessageProps) {
   if (kind === 'workflow_card') return <WorkflowCard m={m} run={run} />;
   if (kind === 'moved') return <MovedNote to={m.meta.to} />;
   if (kind === 'promoted') return <PromotedNote m={m} />;
+  if (kind === 'merged') return <MergedNote m={m} />;
   if (kind === 'workflow_step')
     return (
       <StepPrompt m={m} />
@@ -436,6 +444,21 @@ function MovedNote({ to }: { to: string }) {
   return (
     <div className="system-msg moved">
       → Moved to <code>{tildify(to, config?.homeDir)}</code>. Replies run there from now on.
+    </div>
+  );
+}
+
+/** Marks where a pick grew this thread over more paragraphs (and folded other threads in). */
+function MergedNote({ m }: { m: Msg }) {
+  const n = m.meta.threads as number;
+  const span = m.meta.end > m.meta.start ? `paragraphs ${m.meta.start + 1}–${m.meta.end + 1}` : `paragraph ${m.meta.start + 1}`;
+  return (
+    <div className="system-msg promoted">
+      <span className="promoted-rule" />
+      <span>
+        {n ? `Merged ${n === 1 ? 'a thread' : `${n} threads`} in` : 'Passage widened'} · now {span}
+      </span>
+      <span className="promoted-rule" />
     </div>
   );
 }
