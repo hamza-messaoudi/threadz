@@ -1,3 +1,4 @@
+import { Check, FlowArrow, Minus, X } from '@phosphor-icons/react';
 import { api, type Message, type Run } from '../lib/api.ts';
 
 interface StepState {
@@ -25,7 +26,7 @@ export function WorkflowCard({ m, run }: { m: Message; run?: Run }) {
   return (
     <div className="wf-card" id={`m-${m.id}`}>
       <div className="row">
-        <strong>⚙ {meta.workflow ?? m.content}</strong>
+        <strong className="wf-title"><FlowArrow size={14} aria-hidden /> {meta.workflow ?? m.content}</strong>
         <span className={status === 'error' ? 'error-text' : 'muted'}>{label}</span>
         <span className="spacer" />
         {status === 'running' && (
@@ -42,7 +43,7 @@ export function WorkflowCard({ m, run }: { m: Message; run?: Run }) {
       <div className="wf-steps">
         {steps.map((s, i) => (
           <span key={i} className={`wf-step ${s.status === 'done' ? 'done' : s.status === 'running' ? 'current' : s.status === 'error' ? 'failed' : ''}`}>
-            {i + 1}. @{s.agent} {s.status === 'done' ? '✓' : s.status === 'running' ? '…' : s.status === 'error' ? '✕' : s.status === 'skipped' || s.status === 'cancelled' ? '–' : ''}
+            {i + 1}. @{s.agent} {s.status === 'done' ? <Check size={11} weight="bold" aria-label="done" /> : s.status === 'running' ? '…' : s.status === 'error' ? <X size={11} weight="bold" aria-label="failed" /> : s.status === 'skipped' || s.status === 'cancelled' ? <Minus size={11} weight="bold" aria-label={s.status} /> : ''}
           </span>
         ))}
       </div>

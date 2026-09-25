@@ -1,5 +1,6 @@
 // React wrappers for transitions.dev snippets (CSS in styles.css). Each keeps the snippet's JS
 // orchestration: class swaps, forced reflows and timings read from the :root tokens.
+import { CaretDown, Check } from '@phosphor-icons/react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { durationVar } from '../lib/usePresence.ts';
 
@@ -20,9 +21,7 @@ export function Accordion({ open, head, children, className }: { open: boolean; 
 export function AccChevron() {
   return (
     <span className="t-acc-chevron" aria-hidden>
-      <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4 6.5L8 10.5L12 6.5" />
-      </svg>
+      <CaretDown size={12} />
     </span>
   );
 }
@@ -92,9 +91,7 @@ export function SuccessCheck({ play }: { play: number }) {
   }, [play]);
   return (
     <span ref={ref} className="t-success-check success-check" data-state="out" aria-hidden="true">
-      <svg viewBox="0 0 12 12" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M2.5 6.5L5 9l4.5-5" />
-      </svg>
+      <Check size={12} weight="bold" />
     </span>
   );
 }

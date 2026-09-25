@@ -1921,7 +1921,6 @@ pre {
   transform-origin: center;
   transition: transform var(--acc-chevron) var(--acc-ease);
 }
-.t-acc-chevron path { vector-effect: non-scaling-stroke; }
 .t-acc[data-open="true"] > :not(.t-acc-panel) .t-acc-chevron {
   transform: scaleY(-1);
 }
@@ -2207,10 +2206,9 @@ pre {
   opacity: 0;
 }
 .t-success-check svg { display: block; overflow: visible; }
-/* stroke-dasharray = the check path's getTotalLength() (10.27), rounded up. */
-.t-success-check svg path {
-  stroke-dasharray: 12;
-  stroke-dashoffset: 12;
+/* Phosphor's check is a filled outline, so the draw is a left-to-right wipe instead of a stroke dash. */
+.t-success-check svg {
+  clip-path: inset(0 100% 0 0);
 }
 .t-success-check[data-state="in"] {
   animation:
@@ -2219,7 +2217,7 @@ pre {
     t-check-blur   var(--check-blur-dur)    var(--check-ease-out)     forwards,
     t-check-bob    var(--check-bob-dur)     var(--check-ease-bob)     forwards;
 }
-.t-success-check[data-state="in"] svg path {
+.t-success-check[data-state="in"] svg {
   animation: t-check-draw var(--check-path-dur) var(--check-ease-path) var(--check-path-delay, 0ms) forwards;
 }
 @keyframes t-check-fade { from { opacity: 0; } to { opacity: 1; } }
@@ -2235,11 +2233,11 @@ pre {
   from { translate: 0 var(--check-y-amount); }
   to   { translate: 0 0; }
 }
-@keyframes t-check-draw { to { stroke-dashoffset: 0; } }
+@keyframes t-check-draw { to { clip-path: inset(0 0 0 0); } }
 
 @media (prefers-reduced-motion: reduce) {
   .t-success-check { animation: none !important; opacity: 1; }
-  .t-success-check svg path { animation: none !important; stroke-dashoffset: 0 !important; }
+  .t-success-check svg { animation: none !important; clip-path: none !important; }
 }
 
 /* transitions.dev "Texts reveal" (<TextsReveal>). */
@@ -2582,7 +2580,15 @@ pre {
   gap: 4px;
   flex-wrap: wrap;
 }
+.wf-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
 .wf-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 11.5px;
   border-radius: 4px;
   padding: 0 6px;
