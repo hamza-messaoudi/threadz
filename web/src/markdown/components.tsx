@@ -2,7 +2,7 @@ import type { ComponentType } from 'react';
 import { Graph, GraphBody } from '@/registry/default/graph-frame/graph-frame';
 import { CodeBlock } from './CodeBlock.tsx';
 import { figureComponents } from './figures.tsx';
-import { MdImage, MdTable, TaskMark } from './prose.tsx';
+import { MdBlockquote, MdImage, MdTable, TaskMark } from './prose.tsx';
 import { UNKNOWN_TAG } from './sanitize.ts';
 
 /** Neutral frame for a tag that is not in the map: its name and the block's source. */
@@ -24,5 +24,6 @@ export const components: Record<string, ComponentType<any>> = {
   pre: CodeBlock,
   table: MdTable,
   img: MdImage,
+  blockquote: MdBlockquote,
   input: TaskMark,
 };

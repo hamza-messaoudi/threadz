@@ -201,6 +201,10 @@ body,
   height: 100%;
   margin: 0;
 }
+/* The canvas behind the page (overscroll, the first frame) follows the theme too. */
+html {
+  background: var(--bg);
+}
 body {
   font-family: var(--font);
   font-size: 14px;
@@ -307,6 +311,13 @@ pre {
   top: 10px;
   right: 8px;
   z-index: 2;
+}
+/* Optical centering: the bar and the arrowhead put the weight on one side, so the icon moves 1px the other way. */
+.side-toggle-btn .t-icon[data-icon='a'] svg {
+  translate: 1px 0;
+}
+.side-toggle-btn .t-icon[data-icon='b'] svg {
+  translate: -1px 0;
 }
 .rail {
   display: flex;
@@ -490,6 +501,7 @@ pre {
 .side-archive svg {
   width: 14px;
   height: 14px;
+  translate: 0 0.5px; /* the lid makes the box top-heavy */
 }
 .side-item-row:hover .side-archive,
 .side-archive:focus-visible,
@@ -823,7 +835,7 @@ pre {
   gap: 6px;
   max-width: 100%;
   min-width: 0;
-  padding: 2px 6px;
+  padding: 2px 4px 2px 6px; /* the pencil's own air pads its side */
   border-radius: 6px;
   font-family: var(--mono);
   font-size: 12px;
@@ -1716,6 +1728,7 @@ pre {
 }
 .t-icon-swap .t-icon {
   grid-area: 1 / 1;
+  display: flex; /* no line box: an inline icon would sit on the text baseline, above the centre */
   transition:
     opacity   var(--icon-swap-dur) var(--icon-swap-ease),
     filter    var(--icon-swap-dur) var(--icon-swap-ease),
@@ -2482,6 +2495,14 @@ pre {
   width: 28px;
   padding: 0;
 }
+/* Icon and label: the icon's own inner air already pads its side, so that side takes 2px less. */
+.thread-panel .conv-head .btn:not(.icon-only) {
+  padding-left: 6px;
+}
+/* Reset's arrow and Delete's lid carry their weight high: both sit half a pixel lower. */
+.confirm-btn svg {
+  translate: 0 0.5px;
+}
 /* Reset / Delete: icon only until armed, then the question in red. */
 .confirm-btn {
   color: var(--muted);
@@ -2837,7 +2858,7 @@ details.step-prompt pre {
   right: 0;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px; /* concentric with its 6px items: 6 + 4 padding (+ the border) */
   box-shadow: var(--shadow);
   padding: 4px;
   max-height: 260px;
