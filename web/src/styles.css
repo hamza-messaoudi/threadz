@@ -3249,6 +3249,10 @@ details.step-prompt pre {
     transition: none;
   }
 }
+/* Frame corners, labels and copy buttons (z-10) stay under the sticky header as they scroll past it. */
+.doc-body {
+  isolation: isolate;
+}
 /* Chunks of the document; the ones far from the screen are placeholders of their height. */
 .doc-chunk + .doc-chunk {
   margin-top: 1.25rem;
