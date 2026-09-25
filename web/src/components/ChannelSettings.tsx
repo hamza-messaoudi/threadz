@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { api, type Conversation } from '../lib/api.ts';
+import { useModal } from '../lib/useModal.ts';
+import { useErrorShake } from './transitions.tsx';
 import { navigate } from '../lib/router.ts';
 import { useAppData } from '../lib/store.tsx';
 import { DirField } from './DirField.tsx';
@@ -9,6 +11,8 @@ export function ChannelSettings({ conversation, onClose }: { conversation: Conve
   const [name, setName] = useState(conversation.name);
   const [dir, setDir] = useState<string | null>(conversation.dir);
   const [error, setError] = useState<string | null>(null);
+  const { close, modalClass, backdropClass } = useModal(onClose);
+  const shake = useErrorShake<HTMLInputElement>(error, () => setError(null));
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -17,7 +21,7 @@ export function ChannelSettings({ conversation, onClose }: { conversation: Conve
       const body: Record<string, unknown> = { name };
       if (conversation.kind === 'channel') body.dir = dir;
       upsertConversation(await api.patch<Conversation>(`/api/conversations/${conversation.id}`, body));
-      onClose();
+      close();
     } catch (err: any) {
       setError(err.message);
     }
@@ -26,17 +30,17 @@ export function ChannelSettings({ conversation, onClose }: { conversation: Conve
   const archive = async () => {
     if (!confirm(`Archive "${conversation.name}"? It disappears from the sidebar; messages stay searchable.`)) return;
     upsertConversation(await api.patch<Conversation>(`/api/conversations/${conversation.id}`, { archived: true }));
-    onClose();
+    close();
     navigate({ view: 'home' });
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={save}>
+    <div className={backdropClass} onMouseDown={close}>
+      <form className={`modal ${modalClass} ${shake.wrapClass}`} onMouseDown={(e) => e.stopPropagation()} onSubmit={save}>
         <h3>{conversation.kind === 'chat' ? 'Chat' : 'Channel'} settings</h3>
         <label className="field">
           <span>Name</span>
-          <input value={name} onChange={(e) => setName(e.target.value)} />
+          <input ref={shake.ref} className={shake.inputClass} value={name} onChange={(e) => setName(e.target.value)} />
         </label>
         {conversation.kind === 'channel' && (
           <label className="field">
@@ -45,7 +49,7 @@ export function ChannelSettings({ conversation, onClose }: { conversation: Conve
             <small className="muted">Empty = scratch folder.</small>
           </label>
         )}
-        {error && <div className="error-text">{error}</div>}
+        {shake.message && <div className="error-text t-error-msg">{shake.message}</div>}
         <div className="row gap">
           {conversation.kind !== 'routine' && (
             <button type="button" className="btn danger-ghost" onClick={archive}>
@@ -53,7 +57,7 @@ export function ChannelSettings({ conversation, onClose }: { conversation: Conve
             </button>
           )}
           <span className="spacer" />
-          <button type="button" className="btn" onClick={onClose}>
+          <button type="button" className="btn" onClick={close}>
             Cancel
           </button>
           <button className="btn primary">Save</button>

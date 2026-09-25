@@ -13,7 +13,7 @@ test('theme toggle switches .dark and the markdown tokens', async ({ page }) => 
   const light = await style();
   expect(light.line).toBe('none');
 
-  await page.getByRole('button', { name: 'Dark', exact: true }).click();
+  await page.getByRole('tab', { name: 'Dark', exact: true }).click();
   await expect(page.locator('html')).toHaveClass(/dark/);
   const dark = await style();
   expect(dark.color).not.toBe(light.color);
@@ -22,7 +22,7 @@ test('theme toggle switches .dark and the markdown tokens', async ({ page }) => 
   // Survives a reload, and "System" follows the OS again.
   await page.reload();
   await expect(page.locator('html')).toHaveClass(/dark/);
-  await page.getByRole('button', { name: 'System', exact: true }).click();
+  await page.getByRole('tab', { name: 'System', exact: true }).click();
   await expect(page.locator('html')).not.toHaveClass(/dark/);
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('html')).toHaveClass(/dark/);

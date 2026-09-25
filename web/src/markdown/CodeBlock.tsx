@@ -1,5 +1,6 @@
 import { Children, isValidElement, lazy, Suspense, useContext, useEffect, useState, type ReactNode } from 'react';
 import { GraphCorners } from '@/registry/default/graph-frame/graph-frame';
+import { SuccessCheck, SwapText } from '../components/transitions.tsx';
 import { BlockContext } from './context.ts';
 
 // Mermaid is its own lazy chunk, fetched only when a closed ```mermaid fence renders.
@@ -101,23 +102,25 @@ function HighlightedCode({ code, lang, open }: { code: string; lang: string; ope
 }
 
 function CopyButton({ code }: { code: string }) {
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(0);
   return (
     <button
       type="button"
-      className="absolute top-0 right-4 z-10 -translate-y-1/2 bg-background px-2 font-mono text-xs tracking-wide text-graph-muted uppercase hover:text-graph-accent"
+      className="absolute top-0 right-4 z-10 inline-flex -translate-y-1/2 items-center gap-1 bg-background px-2 font-mono text-xs tracking-wide text-graph-muted uppercase hover:text-graph-accent"
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(code);
-          setCopied(true);
-          setTimeout(() => setCopied(false), 1200);
+          const at = Date.now();
+          setCopied(at);
+          setTimeout(() => setCopied((c) => (c === at ? 0 : c)), 1200);
         } catch {
           // Clipboard blocked (insecure context): nothing to do.
         }
       }}
       title="Copy code"
     >
-      {copied ? '[ copied ]' : 'copy'}
+      {copied > 0 && <SuccessCheck play={copied} key={copied} />}
+      <SwapText text={copied ? '[ copied ]' : 'copy'} />
     </button>
   );
 }

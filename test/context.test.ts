@@ -25,8 +25,10 @@ describe('mentions', () => {
     expect(r.agents).toEqual(['writer', 'researcher']);
     expect(r.workflows).toEqual(['brief']);
   });
-  it('keeps the last directory chip', () => {
-    expect(resolveMentions('x', [{ kind: 'dir', id: '/a', start: 0, end: 1 }, { kind: 'dir', id: '/b', start: 0, end: 1 }], names).dir).toBe('/b');
+  it('collects referenced directories and keeps the last move', () => {
+    const dirs = resolveMentions('x', [{ kind: 'dir', id: '/a', start: 0, end: 1 }, { kind: 'cd', id: '/b', start: 0, end: 1 }, { kind: 'dir', id: '/a', start: 0, end: 1 }, { kind: 'cd', id: '/c', start: 0, end: 1 }], names);
+    expect(dirs.dirs).toEqual(['/a']);
+    expect(dirs.move).toBe('/c'); // one move per message; the last one wins
   });
   it('strips workflow chips for {{input}}', () => {
     const text = '@brief the history of SQLite';

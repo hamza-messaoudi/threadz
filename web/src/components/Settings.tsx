@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.ts';
 import { useAppData } from '../lib/store.tsx';
 import { useTheme, type ThemeSetting } from '../lib/useTheme.ts';
+import { SlidingTabs } from './transitions.tsx';
 
 interface Row {
   tool: string;
@@ -64,7 +65,7 @@ export function Settings() {
             <tr key={a.name}>
               <td>
                 <strong>@{a.name}</strong> {a.builtin && <span className="dd-kind">built-in</span>}
-                {a.render === 'graphs' && <span className="dd-kind" title="render: graphs — writes figures and diagrams">figures</span>}
+                {a.render === 'graphs' && <span className="dd-kind" data-tooltip="render: graphs — writes figures and diagrams">figures</span>}
               </td>
               <td>{a.description}</td>
               <td>
@@ -173,11 +174,16 @@ function ThemeSwitch() {
   return (
     <p className="row gap theme-switch">
       <span>Theme</span>
-      {(['system', 'light', 'dark'] as ThemeSetting[]).map((t) => (
-        <button key={t} className={`btn small ${theme === t ? 'primary' : ''}`} aria-pressed={theme === t} onClick={() => setTheme(t)}>
-          {t === 'system' ? 'System' : t === 'light' ? 'Light' : 'Dark'}
-        </button>
-      ))}
+      <SlidingTabs<ThemeSetting>
+        label="Theme"
+        value={theme}
+        onChange={setTheme}
+        options={[
+          { value: 'system', label: 'System' },
+          { value: 'light', label: 'Light' },
+          { value: 'dark', label: 'Dark' },
+        ]}
+      />
       <span className="md-root">
         <span className="font-mono text-xs tracking-wide text-[var(--graph-accent)] uppercase dark:underline" data-testid="theme-sample">
           [ messages ]

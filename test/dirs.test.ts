@@ -60,30 +60,74 @@ describe('directory search', () => {
 });
 
 describe('dir mentions', () => {
-  it('runs in the tagged directory and rejects directories not in the index', async () => {
+  async function setup() {
     const root = tmpDir();
     tree(root, { 'other-repo': ['.git/'] });
     const t = makeFakeApp({ 'agents/r.md': agentFile('r') }, { dirRoots: [root] });
     cleanup.push(() => t.ctx.close());
     const ch = await t.channel();
     const other = path.join(root, 'other-repo');
-    const res = (await t.call('GET', '/api/dirs?q=other')).body;
-    expect(res[0].path).toBe(other);
+    expect((await t.call('GET', '/api/dirs?q=other')).body[0].path).toBe(other);
+    const say = async (text: string, dir?: { kind: 'dir' | 'cd'; id: string }) => {
+      const at = text.indexOf('#');
+      const res = await t.post(ch.rootThreadId, text, [{ kind: 'agent', id: 'r', start: 0, end: 2 }, ...(dir ? [{ ...dir, start: at, end: text.length }] : [])]);
+      return t.settled(res.agentMessageIds[0]);
+    };
+    return { t, ch, other, say };
+  }
 
-    const bad = await t.call('POST', `/api/threads/${ch.rootThreadId}/messages`, {
-      text: '@r #etc hi',
-      mentions: [{ kind: 'agent', id: 'r', start: 0, end: 2 }, { kind: 'dir', id: '/etc', start: 3, end: 7 }],
-    });
-    expect(bad.status).toBe(400);
+  it('rejects directories that are not in the index', async () => {
+    const { t, ch } = await setup();
+    for (const kind of ['dir', 'cd'])
+      expect(
+        (await t.call('POST', `/api/threads/${ch.rootThreadId}/messages`, { text: '@r #etc hi', mentions: [{ kind: 'agent', id: 'r', start: 0, end: 2 }, { kind, id: '/etc', start: 3, end: 7 }] })).status,
+      ).toBe(400);
+  });
 
-    const r = await t.post(ch.rootThreadId, '@r #other-repo what is this?', [
-      { kind: 'agent', id: 'r', start: 0, end: 2 },
-      { kind: 'dir', id: other, start: 3, end: 14 },
-    ]);
-    const m = await t.settled(r.agentMessageIds[0]);
-    expect(fs.realpathSync(t.calls()[0].cwd)).toBe(fs.realpathSync(other));
-    expect(JSON.parse(m.markers!)).toEqual(['new session in other-repo']);
+  it('a reference keeps the session and directory and names the path in the prompt', async () => {
+    const { t, other, say } = await setup();
+    const first = await say('@r hello');
+    const m = await say('@r compare with #other-repo', { kind: 'dir', id: other });
+    const call = t.calls()[1];
+    expect(fs.realpathSync(call.cwd)).toBe(fs.realpathSync(first.cwd!));
+    expect(call.argv.slice(-2)).toEqual(['--resume', first.session_id]);
+    expect(call.stdin).toContain(`<referenced_directories>`);
+    expect(call.stdin).toContain(`- ${other}`);
+    expect(m.markers).toBeNull();
     expect(t.ctx.store.recentDirs()[0].path).toBe(other);
+  });
+
+  it('a move is sticky for the thread and carries the session over', async () => {
+    const { t, ch, other, say } = await setup();
+    const first = await say('@r hello');
+    const moved = await say('@r work in #other-repo', { kind: 'cd', id: other });
+    const call = t.calls()[1];
+    expect(fs.realpathSync(call.cwd)).toBe(fs.realpathSync(other));
+    expect(call.argv.slice(-3)).toEqual(['--resume', first.session_id, '--fork-session']);
+    expect(call.stdin).toContain('<working_directory_changed>');
+    expect(JSON.parse(moved.markers!)).toEqual(['moved to other-repo, session carried over']);
+    const thread = (await t.call('GET', `/api/threads/${ch.rootThreadId}`)).body;
+    expect(thread.thread.cwd).toBe(other);
+    expect(thread.messages.some((x: any) => x.authorKind === 'system' && x.meta?.kind === 'moved')).toBe(true);
+
+    // Untagged follow-up: still in the new directory, resuming the carried-over session.
+    const next = await say('@r and now?');
+    expect(fs.realpathSync(t.calls()[2].cwd)).toBe(fs.realpathSync(other));
+    expect(t.calls()[2].argv.slice(-2)).toEqual(['--resume', moved.session_id]);
+    expect(next.cwd).toBe(other);
+
+    // A side thread on a message follows where that message ran, and forks its session.
+    const side = (await t.call('POST', '/api/threads', { message_id: next.id, block_index: 0 })).body;
+    const sr = await t.post(side.id, 'why?');
+    await t.settled(sr.agentMessageIds[0]);
+    expect(fs.realpathSync(t.calls()[3].cwd)).toBe(fs.realpathSync(other));
+    expect(t.calls()[3].argv.slice(-3)).toEqual(['--resume', next.session_id, '--fork-session']);
+
+    // Moving back (the header's "back" button) resumes the session that was left behind.
+    expect((await t.call('PATCH', `/api/threads/${ch.rootThreadId}`, { dir: null })).body.cwd).toBe(first.cwd);
+    await say('@r back home');
+    expect(fs.realpathSync(t.calls()[4].cwd)).toBe(fs.realpathSync(first.cwd!));
+    expect(t.calls()[4].argv.slice(-2)).toEqual(['--resume', first.session_id]);
   });
 });
 

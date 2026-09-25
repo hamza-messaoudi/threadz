@@ -91,6 +91,29 @@ describe('paragraph threads', () => {
     expect(call.stdin).toContain('<thread_context>');
   });
 
+  it('a thread can quote a run of paragraphs, next to the single-paragraph threads inside it', async () => {
+    const { t, ch, m } = await setup();
+    const single = await t.call('POST', '/api/threads', { message_id: m.id, block_index: 1 });
+    const range = await t.call('POST', '/api/threads', { message_id: m.id, block_index: 1, block_end: 2 });
+    expect(range.status).toBe(201);
+    expect(range.body.id).not.toBe(single.body.id);
+    expect((await t.call('POST', '/api/threads', { message_id: m.id, block_index: 1, block_end: 2 })).body.id).toBe(range.body.id);
+    expect(t.ctx.store.getThread(range.body.id)!.block_text).toBe('Second paragraph about **indexes**.\n\n- item one\n- item two');
+    for (const bad of [{ block_index: 2, block_end: 1 }, { block_index: 1, block_end: 3 }, { block_index: 0, block_end: 1.5 }])
+      expect((await t.call('POST', '/api/threads', { message_id: m.id, ...bad })).status).toBe(400);
+
+    const info = (await t.call('GET', `/api/threads/${range.body.id}`)).body.thread;
+    expect([info.blockIndex, info.blockEnd]).toEqual([1, 2]);
+    const kids = (await t.call('GET', `/api/threads/${ch.rootThreadId}`)).body.childThreads.map((c: any) => [c.blockIndex, c.blockEnd]);
+    expect(kids).toEqual(expect.arrayContaining([[1, 1], [1, 2]]));
+
+    const r = await t.post(range.body.id, 'compare these');
+    await t.settled(r.agentMessageIds[0]);
+    const stdin = t.calls()[1].stdin;
+    expect(stdin).toContain('on these 2 consecutive passages');
+    expect(stdin).toContain('> Second paragraph about **indexes**.\n> \n> - item one');
+  });
+
   it('refuses threads on unfinished messages', async () => {
     const t = makeFakeApp({ 'agents/slow.md': agentFile('slow', 'FAKE_HANG') });
     cleanup.push(() => t.ctx.close());
@@ -99,5 +122,66 @@ describe('paragraph threads', () => {
     expect((await t.call('POST', '/api/threads', { message_id: r.agentMessageIds[0], block_index: 0 })).status).toBe(400);
     t.ctx.runner.cancelAll();
     await t.settled(r.agentMessageIds[0]);
+  });
+});
+
+describe('thread → channel', () => {
+  it('keeps the thread id, so the next turn resumes the same session with no reseed', async () => {
+    const { t, ch, m } = await setup();
+    const th = (await t.call('POST', '/api/threads', { message_id: m.id, block_index: 1 })).body;
+    const r1 = await t.settled((await t.post(th.id, 'why indexes?')).agentMessageIds[0]);
+
+    const res = await t.call('POST', `/api/threads/${th.id}/promote`, { name: 'indexes' });
+    expect(res.status).toBe(201);
+    const conv = res.body;
+    expect(conv).toMatchObject({ kind: 'channel', name: 'indexes', rootThreadId: th.id, dir: null });
+
+    // The channel is listed, its root is the old thread, and a note marks the switch.
+    const list = (await t.call('GET', '/api/conversations')).body;
+    expect(list.find((c: any) => c.id === conv.id).rootThreadId).toBe(th.id);
+    const data = (await t.call('GET', `/api/threads/${th.id}`)).body;
+    expect(data.thread.parentThreadId).toBeNull();
+    expect(data.thread.blockText).toBe('Second paragraph about **indexes**.');
+    expect(data.origin).toMatchObject({ conversationId: ch.id, conversationName: 'main', threadId: ch.rootThreadId });
+    expect(data.messages.at(-1).meta).toMatchObject({ kind: 'promoted' });
+
+    // The next turn resumes the thread's session: same id, only the new message in the prompt.
+    const r2 = await t.settled((await t.post(th.id, 'go on')).agentMessageIds[0]);
+    const call = t.calls().at(-1)!;
+    expect(call.argv.slice(-2)).toEqual(['--resume', r1.session_id]);
+    expect(call.stdin).not.toContain('<conversation_history>');
+    expect(call.stdin).not.toContain('<thread_context>');
+    expect(r2.session_id).toBe(r1.session_id);
+    expect(r2.markers).toBeNull();
+
+    // The source passage now links to the channel, and reopening it lands there.
+    const kids = (await t.call('GET', `/api/threads/${ch.rootThreadId}`)).body.childThreads;
+    expect(kids).toEqual([expect.objectContaining({ id: th.id, replyCount: 4, channel: { id: conv.id, name: 'indexes' } })]);
+    const again = await t.call('POST', '/api/threads', { message_id: m.id, block_index: 1 });
+    expect(again.body).toMatchObject({ id: th.id, conversationId: conv.id, created: false });
+
+    // The channel can have side threads of its own.
+    const inner = await t.call('POST', '/api/threads', { message_id: r2.id, block_index: 0 });
+    expect(inner.status).toBe(201);
+    expect(inner.body.conversationId).toBe(conv.id);
+  });
+
+  it('an agent new to the channel forks the session of the discussion it grew out of', async () => {
+    const { t, m } = await setup();
+    const th = (await t.call('POST', '/api/threads', { message_id: m.id, block_index: 1 })).body;
+    await t.call('POST', `/api/threads/${th.id}/promote`, { name: 'indexes' });
+    const r = await t.settled((await t.post(th.id, 'why indexes?')).agentMessageIds[0]);
+    const call = t.calls().at(-1)!;
+    expect(call.argv.slice(-3)).toEqual(['--resume', m.session_id, '--fork-session']);
+    expect(call.stdin).toContain('This channel grew out of a side thread');
+    expect(JSON.parse(r.markers!)).toEqual(['session forked from the conversation this channel grew out of']);
+  });
+
+  it('refuses root threads and missing names', async () => {
+    const { t, ch, m } = await setup();
+    expect((await t.call('POST', `/api/threads/${ch.rootThreadId}/promote`, { name: 'x' })).status).toBe(400);
+    const th = (await t.call('POST', '/api/threads', { message_id: m.id, block_index: 0 })).body;
+    expect((await t.call('POST', `/api/threads/${th.id}/promote`, { name: ' ' })).status).toBe(400);
+    expect((await t.call('POST', `/api/threads/${th.id}/promote`, { name: 'x', dir: '/not/known' })).status).toBe(400);
   });
 });

@@ -2,6 +2,7 @@
 // blocks. Not part of the server runtime. Usage: npm run migrate:blocks [-- --db <file>] [--dry-run] [--force]
 import Database from 'better-sqlite3';
 import { blocksOf } from '../../shared/markdown.ts';
+import { openDb } from '../db/migrate.ts';
 import { resolvePaths } from '../paths.ts';
 
 const DONE_KEY = 'migrate_blocks_comark';
@@ -54,7 +55,7 @@ export async function migrateBlocks(db: Database.Database, opts: { dryRun?: bool
     .prepare(
       `SELECT t.id, t.parent_message_id, t.block_index, t.block_text, m.content_md
        FROM threads t JOIN messages m ON m.id = t.parent_message_id
-       WHERE t.parent_message_id IS NOT NULL ORDER BY t.parent_message_id, t.block_index`,
+       WHERE t.parent_message_id IS NOT NULL AND t.block_end = t.block_index ORDER BY t.parent_message_id, t.block_index`,
     )
     .all() as { id: string; parent_message_id: string; block_index: number; block_text: string | null; content_md: string }[];
   result.total = threads.length;
@@ -111,11 +112,11 @@ export async function migrateBlocks(db: Database.Database, opts: { dryRun?: bool
 
   if (!opts.dryRun) {
     db.transaction(() => {
-      // Park moved threads on negative indices first so swaps do not trip UNIQUE(parent_message_id, block_index).
-      const park = db.prepare(`UPDATE threads SET block_index = ? WHERE id = ?`);
-      updates.forEach((u, i) => park.run(-1 - i, u.id));
-      const set = db.prepare(`UPDATE threads SET block_index = ?, block_text = ? WHERE id = ?`);
-      for (const u of updates) set.run(u.index, u.text, u.id);
+      // Park moved threads on negative indices first so swaps do not trip UNIQUE(parent_message_id, block_index, block_end).
+      const park = db.prepare(`UPDATE threads SET block_index = ?, block_end = ? WHERE id = ?`);
+      updates.forEach((u, i) => park.run(-1 - i, -1 - i, u.id));
+      const set = db.prepare(`UPDATE threads SET block_index = ?, block_end = ?, block_text = ? WHERE id = ?`);
+      for (const u of updates) set.run(u.index, u.index, u.text, u.id);
       db.prepare(`INSERT OR REPLACE INTO meta (key, value) VALUES (?, ?)`).run(DONE_KEY, JSON.stringify({ at: Date.now(), moved: result.moved, unmatched: result.unmatched.length }));
     })();
   }
@@ -126,7 +127,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const args = process.argv.slice(2);
   const i = args.indexOf('--db');
   const file = i >= 0 ? args[i + 1] : resolvePaths().dbFile;
-  const db = new Database(file);
+  const db = openDb(file);
   const r = await migrateBlocks(db, { dryRun: args.includes('--dry-run'), force: args.includes('--force') });
   db.close();
   if (r.skipped) console.log(`${file}: already migrated (use --force to run again).`);

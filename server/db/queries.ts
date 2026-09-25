@@ -24,7 +24,12 @@ export interface ThreadRow {
   parent_thread_id: string | null;
   parent_message_id: string | null;
   block_index: number | null;
+  block_end: number | null;
   block_text: string | null;
+  /** Set by a move; NULL = inherit (see threadCwd). */
+  dir: string | null;
+  /** Set when a side thread became its own channel: the thread it was opened from. */
+  origin_thread_id: string | null;
   created_at: number;
 }
 
@@ -164,39 +169,68 @@ export class Store {
     return this.db.prepare(`SELECT * FROM threads WHERE id = ?`).get(id) as ThreadRow | undefined;
   }
 
-  /** Upsert on (parent_message_id, block_index); returns the thread and whether it was created. */
-  upsertParagraphThread(message: MessageRow, blockIndex: number, blockText: string): { thread: ThreadRow; created: boolean } {
+  /** Upsert on (parent_message_id, block_index, block_end); returns the thread and whether it was created. */
+  upsertParagraphThread(message: MessageRow, blockIndex: number, blockText: string, blockEnd = blockIndex): { thread: ThreadRow; created: boolean } {
     const existing = this.db
-      .prepare(`SELECT * FROM threads WHERE parent_message_id = ? AND block_index = ?`)
-      .get(message.id, blockIndex) as ThreadRow | undefined;
+      .prepare(`SELECT * FROM threads WHERE parent_message_id = ? AND block_index = ? AND block_end = ?`)
+      .get(message.id, blockIndex, blockEnd) as ThreadRow | undefined;
     if (existing) return { thread: existing, created: false };
     const parent = this.getThread(message.thread_id)!;
     const id = ulid();
     this.db
       .prepare(
-        `INSERT INTO threads (id, conversation_id, parent_thread_id, parent_message_id, block_index, block_text, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO threads (id, conversation_id, parent_thread_id, parent_message_id, block_index, block_end, block_text, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-      .run(id, parent.conversation_id, parent.id, message.id, blockIndex, blockText, Date.now());
+      .run(id, parent.conversation_id, parent.id, message.id, blockIndex, blockEnd, blockText, Date.now());
     return { thread: this.getThread(id)!, created: true };
   }
 
+  /**
+   * Turns a side thread into the root thread of a new channel. The thread keeps its id, so its messages,
+   * agent sessions and delta cursors carry over as they are; only its place in the tree changes.
+   */
+  promoteThread(threadId: string, input: { name: string; dir: string | null; yolo: boolean }): ConversationRow {
+    const id = ulid();
+    this.db.transaction(() => {
+      this.db
+        .prepare(`INSERT INTO conversations (id, kind, name, dir, yolo, routine_id, archived, created_at) VALUES (?, 'channel', ?, ?, ?, NULL, 0, ?)`)
+        .run(id, input.name, input.dir, input.yolo ? 1 : 0, Date.now());
+      this.db
+        .prepare(`UPDATE threads SET conversation_id = ?, origin_thread_id = parent_thread_id, parent_thread_id = NULL, dir = NULL WHERE id = ?`)
+        .run(id, threadId);
+    })();
+    return this.getConversation(id)!;
+  }
+
+  setThreadDir(id: string, dir: string | null): void {
+    this.db.prepare(`UPDATE threads SET dir = ? WHERE id = ?`).run(dir, id);
+  }
+
+  /** Side threads opened from this thread, including those since turned into channels (channel_id set). */
   childThreadSummaries(threadId: string) {
     return this.db
       .prepare(
-        `SELECT t.id, t.parent_message_id, t.block_index, t.created_at,
-                COUNT(m.id) AS reply_count, MAX(m.created_at) AS last_activity
-         FROM threads t LEFT JOIN messages m ON m.thread_id = t.id AND m.author_kind != 'system'
-         WHERE t.parent_thread_id = ?
+        `SELECT t.id, t.parent_message_id, t.block_index, t.block_end, t.created_at,
+                COUNT(m.id) AS reply_count, MAX(m.created_at) AS last_activity,
+                CASE WHEN t.origin_thread_id IS NULL THEN NULL ELSE c.id END AS channel_id,
+                CASE WHEN t.origin_thread_id IS NULL THEN NULL ELSE c.name END AS channel_name
+         FROM threads t
+         JOIN conversations c ON c.id = t.conversation_id
+         LEFT JOIN messages m ON m.thread_id = t.id AND m.author_kind != 'system'
+         WHERE t.parent_thread_id = @id OR t.origin_thread_id = @id
          GROUP BY t.id`,
       )
-      .all(threadId) as {
+      .all({ id: threadId }) as {
       id: string;
       parent_message_id: string;
       block_index: number;
+      block_end: number;
       created_at: number;
       reply_count: number;
       last_activity: number | null;
+      channel_id: string | null;
+      channel_name: string | null;
     }[];
   }
 
@@ -305,6 +339,13 @@ export class Store {
            flags_hash = excluded.flags_hash, updated_at = excluded.updated_at`,
       )
       .run({ ...s, updated_at: Date.now() });
+  }
+
+  /** The agent's most recently used session in this thread in another directory (before a move). */
+  latestSessionElsewhere(threadId: string, agentId: string, cwd: string): SessionRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM agent_sessions WHERE thread_id = ? AND agent_id = ? AND cwd != ? ORDER BY updated_at DESC LIMIT 1`)
+      .get(threadId, agentId, cwd) as SessionRow | undefined;
   }
 
   deleteSession(threadId: string, agentId: string, cwd: string): void {

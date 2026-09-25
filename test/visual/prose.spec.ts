@@ -41,14 +41,14 @@ for (const scheme of ['light', 'dark'] as const) {
       }
     for (const el of ['p', 'a', 'code'] as const) {
       for (const k of STYLE) expect.soft(got[el]![k], `${el}.${k}`).toBe(ref[el][k]);
-      expect(got[el]!.family).toContain(el === 'code' ? 'Geist Mono' : 'Geist');
+      expect(got[el]!.family).toContain('Hack');
     }
     // Headings are one step smaller than the demo's; everything else about them is the same.
     for (const k of ['color', 'letterSpacing', 'textTransform', 'fontWeight'] as const) {
       if (k === 'letterSpacing') expect(parseFloat(got.h2![k]) / parseFloat(got.h2!.fontSize)).toBeCloseTo(parseFloat(ref.h2[k]) / parseFloat(ref.h2.fontSize), 3);
       else expect.soft(got.h2![k], `h2.${k}`).toBe(ref.h2[k]);
     }
-    expect(got.h2!.family).toContain('Geist Mono');
+    expect(got.h2!.family).toContain('Hack');
   });
 
   test(`prose lab snapshot (${scheme})`, async ({ page }) => {

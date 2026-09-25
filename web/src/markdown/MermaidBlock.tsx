@@ -76,7 +76,7 @@ function themeFrom(el: Element) {
   const bg = v('--background');
   const muted = v('--graph-muted');
   const accent = v('--graph-accent');
-  const font = `'Geist Mono Variable', ui-monospace, monospace`;
+  const font = `'Hack', ui-monospace, monospace`;
   return {
     theme: 'base' as const,
     fontFamily: font,

@@ -2,11 +2,15 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { api, type Conversation, type DirResult, type Mention } from '../lib/api.ts';
 import { createDir, createFirst, createOptions, tildify, type CreateOption } from '../lib/dirs.ts';
 import { agentColor, useAppData } from '../lib/store.tsx';
+import { useDropdown } from '../lib/useDropdown.ts';
+import { useErrorShake } from './transitions.tsx';
 
 interface Props {
   draftKey: string;
   conversation: Conversation | null;
   defaultAgent: string | null;
+  /** Where this thread's turns run now (after any move). */
+  cwd?: string;
   placeholder: string;
   onSend: (text: string, mentions: Mention[]) => Promise<void>;
   autoFocus?: boolean;
@@ -49,6 +53,21 @@ function saveDraft(key: string, v: { text: string; mentions: Mention[] } | null)
   }
 }
 
+const dirChipTitle = (kind: 'dir' | 'cd') =>
+  kind === 'cd' ? 'Moves this thread here · click to only reference it' : 'Referenced: the agent can read it · click to move into it';
+
+/** Flips a directory chip between reference and move; a message moves at most once. */
+function toggleDirChip(root: HTMLElement, chip: HTMLElement) {
+  const kind = chip.dataset.kind === 'cd' ? 'dir' : 'cd';
+  if (kind === 'cd') root.querySelectorAll<HTMLElement>('[data-kind="cd"]').forEach((c) => setDirKind(c, 'dir'));
+  setDirKind(chip, kind);
+}
+function setDirKind(chip: HTMLElement, kind: 'dir' | 'cd') {
+  chip.dataset.kind = kind;
+  chip.className = `mention-chip ${kind}`;
+  chip.dataset.tooltip = dirChipTitle(kind);
+}
+
 function chipEl(kind: Mention['kind'], id: string, label: string): HTMLSpanElement {
   const chip = document.createElement('span');
   chip.contentEditable = 'false';
@@ -58,6 +77,7 @@ function chipEl(kind: Mention['kind'], id: string, label: string): HTMLSpanEleme
   chip.dataset.label = label;
   chip.textContent = label;
   if (kind === 'agent') chip.style.color = agentColor(id);
+  if (kind === 'dir' || kind === 'cd') chip.dataset.tooltip = dirChipTitle(kind);
   return chip;
 }
 
@@ -112,7 +132,7 @@ function placeCaretAtEnd(el: HTMLElement) {
   s?.addRange(r);
 }
 
-export function Composer({ draftKey, conversation, defaultAgent, placeholder, onSend, autoFocus }: Props) {
+export function Composer({ draftKey, conversation, defaultAgent, cwd, placeholder, onSend, autoFocus }: Props) {
   const { config, upsertConversation } = useAppData();
   const ref = useRef<HTMLDivElement>(null);
   const [value, setValue] = useState<{ text: string; mentions: Mention[] }>({ text: '', mentions: [] });
@@ -122,6 +142,8 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirLabels, setDirLabels] = useState<Record<string, string>>({});
+  const [yoloInit, setYoloInit] = useState<string | null>(null);
+  const shake = useErrorShake<HTMLDivElement>(error, () => setError(null));
 
   // Restore the draft for this conversation/thread.
   useLayoutEffect(() => {
@@ -202,25 +224,27 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
     if (!ref.current!.textContent && !ref.current!.querySelector('[data-kind]')) ref.current!.innerHTML = '';
     const v = serialize(ref.current!);
     setValue(v);
+    setError(null); // editing clears a failed send's error
     saveDraft(`draft:${draftKey}`, v);
     detectTrigger();
   };
 
-  const choose = async (it: Item) => {
+  // A folder is referenced unless picked with Shift (or just created: a new project is somewhere to work in).
+  const choose = async (it: Item, move = false) => {
     if (!trigger) return;
     if (it.create) {
       try {
         const d = await createDir(it.create);
-        it = { kind: 'dir', id: d.path, label: `#${d.name}`, sub: d.path };
+        it = { kind: 'cd', id: d.path, label: `#${d.name}`, sub: d.path };
       } catch (e: any) {
         setError(e.message);
         return;
       }
-    }
+    } else if (it.kind === 'dir' && move) it = { ...it, kind: 'cd' };
     const el = ref.current!;
-    if (it.kind === 'dir') {
-      // One directory per message: a new one replaces the old chip.
-      el.querySelectorAll('[data-kind="dir"]').forEach((n) => n.remove());
+    if (it.kind === 'dir' || it.kind === 'cd') {
+      // The same folder twice is one chip; a new move replaces the old one.
+      el.querySelectorAll<HTMLElement>('[data-kind="dir"], [data-kind="cd"]').forEach((n) => (n.dataset.id === it.id || (it.kind === 'cd' && n.dataset.kind === 'cd')) && n.remove());
       setDirLabels((d) => ({ ...d, [it.id]: it.label }));
     }
     const range = document.createRange();
@@ -242,7 +266,7 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
     onInput();
   };
 
-  const analysis = useMemo(() => analyse(value.mentions, defaultAgent, conversation, config?.workflows ?? [], dirLabels), [value.mentions, defaultAgent, conversation, config, dirLabels]);
+  const analysis = useMemo(() => analyse(value.mentions, defaultAgent, (cwd ?? conversation?.dir) !== config?.scratchDir ? (cwd ?? conversation?.dir ?? null) : null, config?.workflows ?? [], dirLabels), [value.mentions, defaultAgent, cwd, conversation?.dir, config, dirLabels]);
 
   const send = async () => {
     if (sending || !value.text.trim() || analysis.blocked) return;
@@ -278,7 +302,7 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
       }
       if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
-        return choose(items[sel]);
+        return choose(items[sel], e.shiftKey);
       }
     }
     if (e.key === 'Escape' && trigger) {
@@ -316,12 +340,14 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
     upsertConversation(await api.patch<Conversation>(`/api/conversations/${conversation.id}`, { yolo: !conversation.yolo }));
   };
 
+  const { shown: menuView, className: menuClass } = useDropdown(trigger ? { char: trigger.char, items, sel } : null);
+
   return (
-    <div className="composer-wrap">
-      {trigger && (
-        <div className="dropdown" onMouseDown={(e) => e.preventDefault()}>
-          {items.map((it, i) => (
-            <button key={`${it.kind}:${it.id}`} className={`dd-item ${i === sel ? 'sel' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => choose(it)}>
+    <div className={`composer-wrap ${shake.wrapClass}`}>
+      {menuView && (
+        <div className={`dropdown ${menuClass}`} data-origin="bottom-left" onMouseDown={(e) => e.preventDefault()}>
+          {menuView.items.map((it, i) => (
+            <button key={`${it.kind}:${it.id}`} className={`dd-item ${i === menuView.sel ? 'sel' : ''}`} onMouseEnter={() => setSel(i)} onClick={(e) => choose(it, e.shiftKey)}>
               <span className="dd-title">
                 <span style={it.kind === 'agent' ? { color: agentColor(it.id) } : undefined}>{it.kind === 'dir' && !it.create ? basename(it.id) : it.label}</span>
                 {it.badge && <span className={it.kind === 'dir' ? 'branch' : 'dd-kind'}>{it.badge}</span>}
@@ -329,14 +355,19 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
               {it.sub && <span className="dd-sub">{it.sub}</span>}
             </button>
           ))}
-          {!items.length && (
+          {menuView.char === '#' && menuView.items.some((it) => !it.create) && (
+            <div className="dd-foot">
+              <kbd>↵</kbd> reference <span className="muted">(agent stays put)</span> · <kbd>⇧↵</kbd> move into <span className="muted">(thread runs there from now on)</span>
+            </div>
+          )}
+          {!menuView.items.length && (
             <div className="dd-empty">
-              {trigger.char === '@' ? 'No matching agent or workflow' : config?.dirRoots.length ? 'Type a folder name to find it, or to create a new one' : 'No matching directory'}
+              {menuView.char === '@' ? 'No matching agent or workflow' : config?.dirRoots.length ? 'Type a folder name to find it, or to create a new one' : 'No matching directory'}
             </div>
           )}
         </div>
       )}
-      <div className={`composer ${conversation?.yolo ? 'yolo' : ''}`}>
+      <div ref={shake.ref} className={`composer ${shake.inputClass} ${conversation?.yolo ? 'yolo' : ''}`}>
         <div
           ref={ref}
           className="editor"
@@ -347,7 +378,14 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
           onInput={onInput}
           onKeyDown={onKeyDown}
           onKeyUp={(e) => ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key) && detectTrigger()}
-          onClick={detectTrigger}
+          onClick={(e) => {
+            const chip = (e.target as HTMLElement).closest<HTMLElement>('[data-kind="dir"], [data-kind="cd"]');
+            if (chip) {
+              toggleDirChip(ref.current!, chip);
+              return onInput();
+            }
+            detectTrigger();
+          }}
           onBlur={() => setTimeout(() => setTrigger(null), 150)}
           onPaste={onPaste}
           suppressContentEditableWarning
@@ -357,10 +395,23 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
             {analysis.hint}
           </span>
           <span className="spacer" />
-          {error && <span className="error-text">{error}</span>}
+          {shake.message && <span className="error-text t-error-msg">{shake.message}</span>}
           {conversation && (
-            <button className={`yolo-toggle ${conversation.yolo ? 'on' : ''}`} onClick={toggleYolo} title="YOLO lets agents change files and run write actions in this conversation">
-              <span className="knob" /> YOLO
+            <button
+              className={`yolo-toggle t-toggle ${conversation.yolo ? 'on' : ''} ${yoloInit === conversation.id ? 'is-init' : ''}`}
+              role="switch"
+              aria-checked={conversation.yolo}
+              data-on={conversation.yolo}
+              onClick={() => {
+                setYoloInit(conversation.id); // animate from the first click on, not on load or when switching chats
+                toggleYolo();
+              }}
+              data-tooltip="YOLO lets agents change files and run write actions here"
+            >
+              <span className="knob">
+                <span className="t-toggle-thumb" />
+              </span>{' '}
+              YOLO
             </button>
           )}
           <button className="send-btn" disabled={!value.text.trim() || sending || analysis.blocked} onClick={send}>
@@ -375,14 +426,16 @@ export function Composer({ draftKey, conversation, defaultAgent, placeholder, on
 function analyse(
   mentions: Mention[],
   defaultAgent: string | null,
-  conversation: Conversation | null,
+  cwd: string | null,
   workflows: { name: string; steps: string[] }[],
   dirLabels: Record<string, string>,
 ): { hint: string; blocked: boolean } {
   const agents = [...new Set(mentions.filter((m) => m.kind === 'agent').map((m) => m.id))];
   const wfs = [...new Set(mentions.filter((m) => m.kind === 'workflow').map((m) => m.id))];
-  const dir = mentions.find((m) => m.kind === 'dir');
-  const where = dir ? ` in ${dirLabels[dir.id]?.slice(1) ?? basename(dir.id)}` : conversation?.dir ? ` in ${basename(conversation.dir)}` : '';
+  const name = (id: string) => dirLabels[id]?.slice(1) ?? basename(id);
+  const move = mentions.filter((m) => m.kind === 'cd').pop();
+  const refs = [...new Set(mentions.filter((m) => m.kind === 'dir' && m.id !== move?.id).map((m) => name(m.id)))];
+  const where = (move ? ` in ${name(move.id)} (moves this thread)` : cwd ? ` in ${basename(cwd)}` : '') + (refs.length ? ` · can read ${refs.join(', ')}` : '');
   if (wfs.length && agents.length) return { hint: 'A message can tag agents or one workflow, not both', blocked: true };
   if (wfs.length > 1) return { hint: 'Tag one workflow at a time', blocked: true };
   if (wfs.length) {

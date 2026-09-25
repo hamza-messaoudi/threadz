@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import Database from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
 import { migrate } from '../server/db/migrate.ts';
@@ -53,5 +55,28 @@ describe('migrate:blocks', () => {
     expect(r.moved).toBe(1);
     expect((d.prepare('SELECT block_index FROM threads WHERE id = ?').get(id) as { block_index: number }).block_index).toBe(0);
     expect((await migrateBlocks(d)).skipped).toBe(false);
+  });
+});
+
+describe('schema migrations', () => {
+  it('v2 (and later) keeps existing threads and their messages, with block_end set to block_index', () => {
+    const d = new Database(':memory:');
+    d.pragma('foreign_keys = ON');
+    d.exec(fs.readFileSync(path.join(import.meta.dirname, '..', 'server', 'db', 'schema.sql'), 'utf8'));
+    d.pragma('user_version = 1');
+    d.prepare(`INSERT INTO conversations (id, kind, name, created_at) VALUES ('c', 'channel', 'c', 0)`).run();
+    d.prepare(`INSERT INTO threads (id, conversation_id, created_at) VALUES ('root', 'c', 0)`).run();
+    d.prepare(`INSERT INTO messages (id, thread_id, author_kind, content_md, status, created_at) VALUES ('m', 'root', 'agent', 'a', 'done', 0)`).run();
+    d.prepare(`INSERT INTO threads (id, conversation_id, parent_thread_id, parent_message_id, block_index, block_text, created_at) VALUES ('t', 'c', 'root', 'm', 0, 'a', 0)`).run();
+    d.prepare(`INSERT INTO messages (id, thread_id, author_kind, content_md, status, created_at) VALUES ('r', 't', 'user', 'q', 'done', 0)`).run();
+
+    migrate(d);
+    expect(d.pragma('user_version', { simple: true })).toBe(4);
+    expect(d.pragma('foreign_keys', { simple: true })).toBe(1);
+    expect(d.prepare(`SELECT block_index, block_end FROM threads WHERE id = 't'`).get()).toEqual({ block_index: 0, block_end: 0 });
+    expect(d.prepare(`SELECT thread_id FROM messages WHERE id = 'r'`).get()).toEqual({ thread_id: 't' });
+    expect(d.pragma('foreign_key_check')).toEqual([]);
+    // Messages still point at the rebuilt table, not a leftover copy.
+    expect(() => d.prepare(`INSERT INTO messages (id, thread_id, author_kind, content_md, status, created_at) VALUES ('x', 'nope', 'user', '', 'done', 0)`).run()).toThrow(/FOREIGN KEY/);
   });
 });

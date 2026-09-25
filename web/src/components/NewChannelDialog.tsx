@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, type Conversation } from '../lib/api.ts';
+import { useModal } from '../lib/useModal.ts';
+import { useErrorShake } from './transitions.tsx';
 import { navigate } from '../lib/router.ts';
 import { useAppData } from '../lib/store.tsx';
 import { createDir, slugify, tildify } from '../lib/dirs.ts';
@@ -11,6 +13,8 @@ export function NewChannelDialog({ onClose }: { onClose: () => void }) {
   const [dir, setDir] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const { close, modalClass, backdropClass } = useModal(onClose);
+  const shake = useErrorShake<HTMLInputElement>(error, () => setError(null));
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,7 +23,7 @@ export function NewChannelDialog({ onClose }: { onClose: () => void }) {
     try {
       const c = await api.post<Conversation>('/api/conversations', { kind: 'channel', name, dir });
       upsertConversation(c);
-      onClose();
+      close();
       navigate({ view: 'conversation', conversationId: c.id });
     } catch (err: any) {
       setError(err.message);
@@ -29,12 +33,12 @@ export function NewChannelDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <form className="modal" onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
+    <div className={backdropClass} onMouseDown={close}>
+      <form className={`modal ${modalClass} ${shake.wrapClass}`} onMouseDown={(e) => e.stopPropagation()} onSubmit={submit}>
         <h3>New channel</h3>
         <label className="field">
           <span>Name</span>
-          <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. main-repo" />
+          <input ref={shake.ref} className={shake.inputClass} autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. main-repo" />
         </label>
         <label className="field">
           <span>Directory (optional)</span>
@@ -42,9 +46,9 @@ export function NewChannelDialog({ onClose }: { onClose: () => void }) {
           <FolderSuggestion name={name} roots={config?.dirRoots ?? []} home={config?.homeDir} hidden={!!dir} onCreated={setDir} onError={setError} />
           <small className="muted">Agents run here unless a message tags another directory. Empty = scratch folder.</small>
         </label>
-        {error && <div className="error-text">{error}</div>}
+        {shake.message && <div className="error-text t-error-msg">{shake.message}</div>}
         <div className="row gap end">
-          <button type="button" className="btn" onClick={onClose}>
+          <button type="button" className="btn" onClick={close}>
             Cancel
           </button>
           <button className="btn primary" disabled={!name.trim() || busy}>

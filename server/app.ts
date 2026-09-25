@@ -8,7 +8,7 @@ import { COOKIE, guard, loadOrCreateToken, tokenEquals } from './auth.ts';
 import { loadConfig } from './config/load.ts';
 import type { LoadedConfig } from './config/types.ts';
 import { watchConfig } from './config/watch.ts';
-import { defaultAgent, HttpError, postUserMessage } from './core/dispatch.ts';
+import { defaultAgent, HttpError, moveThread, postUserMessage, threadCwd } from './core/dispatch.ts';
 import { serializeConversation, serializeMessage, serializeRun } from './core/serialize.ts';
 import { openDb } from './db/migrate.ts';
 import { Store } from './db/queries.ts';
@@ -167,19 +167,14 @@ export function createApp(opts: AppOptions = {}) {
     return c.json({ error: err.message }, status);
   });
 
-  /** Keeps the parent's thread badge (reply count, last activity) live. */
+  /** Keeps the parent's thread badge (reply count, last activity) live, also after the thread became a channel. */
   function publishChildSummary(threadId: string) {
     const t = store.getThread(threadId);
-    if (!t?.parent_thread_id) return;
-    const sum = store.childThreadSummaries(t.parent_thread_id).find((x) => x.id === t.id);
+    const parentId = t?.parent_thread_id ?? t?.origin_thread_id;
+    if (!parentId) return;
+    const sum = store.childThreadSummaries(parentId).find((x) => x.id === t!.id);
     if (!sum) return;
-    hub.thread(t.parent_thread_id, 'thread.created', {
-      id: sum.id,
-      parentMessageId: sum.parent_message_id,
-      blockIndex: sum.block_index,
-      replyCount: sum.reply_count,
-      lastActivity: sum.last_activity ?? sum.created_at,
-    });
+    hub.thread(parentId, 'thread.created', serializeChildThread(sum));
   }
   hub.tap = (topic, event) => {
     if (topic.startsWith('thread:') && (event === 'message.created' || event === 'message.done')) publishChildSummary(topic.slice(7));
@@ -248,7 +243,10 @@ export function createApp(opts: AppOptions = {}) {
         parentThreadId: thread.parent_thread_id,
         parentMessageId: thread.parent_message_id,
         blockIndex: thread.block_index,
+        blockEnd: thread.block_end,
         blockText: thread.block_text,
+        cwd: threadCwd(ctx, thread),
+        moved: !!thread.dir,
       },
       messages: store.listMessages(thread.id).map(serializeMessage),
       defaultAgent: defaultAgent(ctx, thread),
@@ -259,14 +257,56 @@ export function createApp(opts: AppOptions = {}) {
           .map((r) => [r!.id, serializeRun(r!)]),
       ),
       sourceMessage: thread.parent_message_id ? serializeMessage(store.getMessage(thread.parent_message_id)!) : null,
-      childThreads: store.childThreadSummaries(thread.id).map((t) => ({
-        id: t.id,
-        parentMessageId: t.parent_message_id,
-        blockIndex: t.block_index,
-        replyCount: t.reply_count,
-        lastActivity: t.last_activity ?? t.created_at,
-      })),
+      childThreads: store.childThreadSummaries(thread.id).map(serializeChildThread),
+      origin: originOf(thread),
     });
+  });
+
+  /** Where a channel made from a side thread came from. */
+  function originOf(thread: ThreadRow) {
+    if (!thread.origin_thread_id) return null;
+    const from = store.getThread(thread.origin_thread_id);
+    const conv = from && store.getConversation(from.conversation_id);
+    if (!conv) return null;
+    return { threadId: from!.id, conversationId: conv.id, conversationName: conv.name, conversationKind: conv.kind };
+  }
+
+  // Turns a side thread into its own channel. The thread keeps its id, so agents resume their sessions
+  // (and the prompt cache) as if nothing happened; the passage in the source links to the new channel.
+  app.post('/api/threads/:id/promote', async (c) => {
+    const thread = store.getThread(c.req.param('id'));
+    if (!thread) return c.json({ error: 'not found' }, 404);
+    if (!thread.parent_thread_id) return c.json({ error: 'only a side thread can become a channel' }, 400);
+    const body = await c.req.json().catch(() => ({}));
+    const name = typeof body.name === 'string' ? body.name.trim() : '';
+    if (!name) return c.json({ error: 'name required' }, 400);
+    const source = store.getConversation(thread.conversation_id)!;
+    // Default: keep running where the thread runs now, so every session resumes as is. Another directory
+    // works too: the runner forks each agent's session into it on its next turn.
+    const cwd = threadCwd(ctx, thread);
+    const dir = body.dir === undefined || body.dir === cwd ? cwd : validateDirInput(ctx, body.dir);
+    const conversation = store.promoteThread(thread.id, { name, dir: dir === ctx.cfg.config.scratchDir ? null : dir, yolo: !!source.yolo });
+    const note = store.insertMessage({
+      thread_id: thread.id,
+      author_kind: 'system',
+      content_md: `Became #${name}`,
+      status: 'done',
+      meta: { kind: 'promoted', from: { conversationId: source.id, name: source.name, kind: source.kind } },
+    });
+    const out = serializeConversation({ ...conversation, root_thread_id: thread.id, last_activity: note.created_at });
+    hub.global('conversation.updated', out);
+    hub.thread(thread.id, 'message.created', serializeMessage(note));
+    hub.thread(thread.id, 'thread.promoted', { id: thread.id, conversationId: conversation.id });
+    return c.json(out, 201);
+  });
+
+  // Moves the thread (dir: a known directory, or null to go back to its default).
+  app.patch('/api/threads/:id', async (c) => {
+    const thread = store.getThread(c.req.param('id'));
+    if (!thread) return c.json({ error: 'not found' }, 404);
+    const body = await c.req.json();
+    if (!('dir' in body)) return c.json({ error: 'nothing to change' }, 400);
+    return c.json({ cwd: moveThread(ctx, thread, body.dir === null ? null : String(body.dir)) });
   });
 
   app.post('/api/threads/:id/messages', async (c) => {
@@ -348,9 +388,11 @@ export function createApp(opts: AppOptions = {}) {
     } catch {
       return c.json({ error: 'could not parse this message' }, 400);
     }
+    // A thread quotes one block, or a run of them when block_end is given.
     const index = Number(body.block_index);
-    if (!Number.isInteger(index) || index < 0 || index >= blocks.length) return c.json({ error: 'no such paragraph' }, 400);
-    const { thread, created } = store.upsertParagraphThread(msg, index, blocks[index]);
+    const end = body.block_end == null ? index : Number(body.block_end);
+    if (!Number.isInteger(index) || !Number.isInteger(end) || index < 0 || end < index || end >= blocks.length) return c.json({ error: 'no such paragraph' }, 400);
+    const { thread, created } = store.upsertParagraphThread(msg, index, blocks.slice(index, end + 1).join('\n\n'), end);
     if (created) publishChildSummary(thread.id);
     return c.json({ id: thread.id, conversationId: thread.conversation_id, created }, created ? 201 : 200);
   });
@@ -402,6 +444,18 @@ export function createApp(opts: AppOptions = {}) {
   });
 
   return { app, ctx };
+}
+
+function serializeChildThread(t: ReturnType<Store['childThreadSummaries']>[number]) {
+  return {
+    id: t.id,
+    parentMessageId: t.parent_message_id,
+    blockIndex: t.block_index,
+    blockEnd: t.block_end,
+    replyCount: t.reply_count,
+    lastActivity: t.last_activity ?? t.created_at,
+    channel: t.channel_id ? { id: t.channel_id, name: t.channel_name! } : null,
+  };
 }
 
 const MIME: Record<string, string> = {

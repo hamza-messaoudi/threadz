@@ -7,7 +7,7 @@ export type DB = Database.Database;
 
 // Each entry is one migration; index + 1 is the schema version it produces.
 // schema.sql is version 1. Append new plain-SQL files here, never edit old ones.
-const MIGRATIONS = ['schema.sql'];
+const MIGRATIONS = ['schema.sql', '002-thread-ranges.sql', '003-thread-dir.sql', '004-thread-promote.sql'];
 
 export function openDb(file: string): DB {
   if (file !== ':memory:') fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -22,11 +22,22 @@ export function openDb(file: string): DB {
 
 export function migrate(db: DB): void {
   const current = db.pragma('user_version', { simple: true }) as number;
-  for (let v = current; v < MIGRATIONS.length; v++) {
-    const sql = fs.readFileSync(path.join(appRoot, 'server', 'db', MIGRATIONS[v]), 'utf8');
-    db.transaction(() => {
-      db.exec(sql);
-      db.pragma(`user_version = ${v + 1}`);
-    })();
+  if (current >= MIGRATIONS.length) return;
+  // Table rebuilds drop a table other tables point at; SQLite's documented recipe turns foreign keys
+  // off (it cannot be done inside a transaction) and checks them before committing.
+  const fk = db.pragma('foreign_keys', { simple: true }) as number;
+  db.pragma('foreign_keys = OFF');
+  try {
+    for (let v = current; v < MIGRATIONS.length; v++) {
+      const sql = fs.readFileSync(path.join(appRoot, 'server', 'db', MIGRATIONS[v]), 'utf8');
+      db.transaction(() => {
+        db.exec(sql);
+        const broken = db.pragma('foreign_key_check') as unknown[];
+        if (broken.length) throw new Error(`migration ${MIGRATIONS[v]} broke ${broken.length} foreign keys`);
+        db.pragma(`user_version = ${v + 1}`);
+      })();
+    }
+  } finally {
+    db.pragma(`foreign_keys = ${fk ? 'ON' : 'OFF'}`);
   }
 }

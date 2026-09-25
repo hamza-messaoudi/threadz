@@ -148,3 +148,25 @@ describe('mermaid source', () => {
     expect(stripDirectives('---\nconfig:\n  securityLevel: loose\n---\ngraph TD; A-->B')).toBe('graph TD; A-->B');
   });
 });
+
+describe('streaming words', () => {
+  it('wraps prose words in spans, keeps nesting, and leaves code alone', async () => {
+    const { streamWords } = await import('../web/src/markdown/stream-words.ts');
+    const p: any = ['p', {}, 'Hello big ', ['strong', {}, 'bold word'], ' and ', ['code', {}, 'x y']];
+    expect(streamWords(p)).toEqual([
+      'p',
+      {},
+      ['span', { class: 't-stream-w' }, 'Hello'],
+      ' ',
+      ['span', { class: 't-stream-w' }, 'big'],
+      ' ',
+      ['strong', {}, ['span', { class: 't-stream-w' }, 'bold'], ' ', ['span', { class: 't-stream-w' }, 'word']],
+      ' ',
+      ['span', { class: 't-stream-w' }, 'and'],
+      ' ',
+      ['code', {}, 'x y'],
+    ]);
+    const pre: any = ['pre', {}, 'a b'];
+    expect(streamWords(pre)).toBe(pre);
+  });
+});

@@ -1,38 +1,75 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, type Conversation, type Mention } from '../lib/api.ts';
 import { agentColor } from '../lib/store.tsx';
 import { useThread } from '../lib/useThread.ts';
 import { MessageMarkdown } from '../markdown/MessageMarkdown.tsx';
 import { Composer } from './Composer.tsx';
+import { MessageSkeleton, SkeletonReveal, SwapText, useResizeHeight } from './transitions.tsx';
 import { ScrollArea } from './ConversationView.tsx';
-import { MessageList } from './MessageList.tsx';
+import { MessageList, type Passage } from './MessageList.tsx';
+import { PromoteThreadDialog } from './PromoteThreadDialog.tsx';
+import { navigate } from '../lib/router.ts';
+import type { PresencePhase } from '../lib/usePresence.ts';
+
+/** Replies after which the panel suggests giving the thread its own channel. */
+export const LONG_THREAD = 10;
+const NUDGE_KEY = 'threads:promote-nudge-dismissed';
+
+function nudgeDismissed(threadId: string): boolean {
+  try {
+    return (JSON.parse(localStorage.getItem(NUDGE_KEY) ?? '[]') as string[]).includes(threadId);
+  } catch {
+    return false;
+  }
+}
+
+function dismissNudge(threadId: string) {
+  try {
+    const ids = (JSON.parse(localStorage.getItem(NUDGE_KEY) ?? '[]') as string[]).filter((x) => x !== threadId);
+    localStorage.setItem(NUDGE_KEY, JSON.stringify([...ids, threadId].slice(-200)));
+  } catch {
+    // storage unavailable: the nudge comes back next time
+  }
+}
 
 interface Props {
   threadId: string;
   conversation: Conversation;
   focusId?: string;
   onClose: () => void;
-  onSource: (s: { messageId: string; blockIndex: number } | null) => void;
+  onSource: (s: Passage | null) => void;
+  phase: PresencePhase;
 }
 
-export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource }: Props) {
+export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource, phase }: Props) {
   const t = useThread(threadId);
   const [collapsed, setCollapsed] = useState(false);
+  const quoteBody = useRef<HTMLDivElement>(null);
+  useResizeHeight(quoteBody, collapsed ? '3.2em' : 'auto');
   const info = t.data?.thread;
   const source = t.data?.sourceMessage;
+  const [promoting, setPromoting] = useState(false);
+  const [nudgeOff, setNudgeOff] = useState(() => nudgeDismissed(threadId));
+  const replies = t.messages.filter((m) => m.authorKind !== 'system').length;
+
+  // The thread became a channel (here or in another tab; old links too): follow it there.
+  useEffect(() => {
+    if (info && info.conversationId !== conversation.id) navigate({ view: 'conversation', conversationId: info.conversationId }, true);
+  }, [info?.conversationId, conversation.id]);
 
   useEffect(() => {
-    if (info?.parentMessageId != null && info.blockIndex != null) onSource({ messageId: info.parentMessageId, blockIndex: info.blockIndex });
+    if (info?.parentMessageId != null && info.blockIndex != null) onSource({ messageId: info.parentMessageId, start: info.blockIndex, end: info.blockEnd ?? info.blockIndex });
     return () => onSource(null);
-  }, [info?.parentMessageId, info?.blockIndex, onSource]);
+  }, [info?.parentMessageId, info?.blockIndex, info?.blockEnd, onSource]);
 
   useEffect(() => {
+    if (phase === 'closing' || promoting) return;
     const on = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && !e.defaultPrevented) onClose();
     };
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
-  }, [onClose]);
+  }, [onClose, phase, promoting]);
 
   const send = useCallback(
     async (text: string, mentions: Mention[]) => {
@@ -41,15 +78,23 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
     [threadId],
   );
 
+  const paragraphs = info?.blockIndex != null && info.blockEnd != null ? info.blockEnd - info.blockIndex + 1 : 1;
   const sourceAuthor = source ? (source.authorKind === 'agent' ? `@${source.authorId}` : source.authorKind === 'user' ? 'you' : 'app') : '';
 
   return (
-    <aside className="thread-panel">
+    // Card resize opens a column for the panel (the conversation narrows smoothly); panel reveal slides the contents in.
+    <aside className={`thread-panel t-resize ${phase === 'open' ? 'is-open' : ''}`} inert={phase === 'closing'}>
+      <div className="thread-panel-inner t-panel-slide" data-axis="x" data-open={phase === 'open'}>
       <header className="conv-head">
         <h2>Thread</h2>
         <span className="conv-dir">{conversation.kind === 'chat' ? conversation.name : `#${conversation.name}`}</span>
         <span className="spacer" />
-        <button className="btn ghost" onClick={onClose} title="Close (Esc)">
+        {info && (
+          <button className="btn ghost small" onClick={() => setPromoting(true)} data-tooltip="Give this thread its own channel. Agents keep their sessions.">
+            ⇱ Make channel
+          </button>
+        )}
+        <button className="btn ghost" onClick={onClose} data-tooltip="Close (Esc)" aria-label="Close thread">
           ✕
         </button>
       </header>
@@ -57,23 +102,51 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
         <div className={`quote ${collapsed ? 'collapsed' : ''}`}>
           <div className="quote-head">
             <span style={source?.authorKind === 'agent' ? { color: agentColor(source.authorId) } : undefined}>{sourceAuthor}</span>
-            <button className="link" onClick={() => setCollapsed(!collapsed)}>
-              {collapsed ? 'Expand' : 'Collapse'}
+            {paragraphs > 1 && <span className="muted">· {paragraphs} paragraphs</span>}
+            <span className="spacer" />
+            <button className="link" onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}>
+              <SwapText text={collapsed ? 'Expand' : 'Collapse'} />
             </button>
           </div>
-          <MessageMarkdown id={`quote:${threadId}`} content={info.blockText} className="quote-body" />
+          <div ref={quoteBody} className="quote-clip t-resize">
+            <MessageMarkdown id={`quote:${threadId}`} content={info.blockText} className="quote-body" />
+          </div>
         </div>
       )}
       <ScrollArea messages={t.messages} focusId={focusId}>
-        {t.loading ? (
-          <div className="empty-state muted">Loading…</div>
-        ) : t.messages.length === 0 ? (
-          <div className="empty-state muted">Ask about this passage. The main conversation is not affected.</div>
-        ) : (
-          <MessageList messages={t.messages} runs={t.runs} focusId={focusId} />
-        )}
+        <SkeletonReveal loaded={!t.loading} skeleton={<MessageSkeleton rows={2} />}>
+          {t.loading ? null : t.messages.length === 0 ? (
+            <div className="empty-state muted">Ask about this passage. The main conversation is not affected.</div>
+          ) : (
+            <MessageList messages={t.messages} runs={t.runs} focusId={focusId} />
+          )}
+        </SkeletonReveal>
       </ScrollArea>
-      <Composer draftKey={threadId} conversation={conversation} defaultAgent={t.defaultAgent} placeholder="Reply in thread…" onSend={send} autoFocus />
+      {info && replies >= LONG_THREAD && !nudgeOff && (
+        <div className="promote-nudge">
+          <span>
+            {replies} replies. Give it room as its own channel? <span className="muted">Agents keep their context.</span>
+          </span>
+          <span className="spacer" />
+          <button className="btn small primary" onClick={() => setPromoting(true)}>
+            Make channel
+          </button>
+          <button
+            className="btn ghost small"
+            aria-label="Dismiss"
+            data-tooltip="Not now"
+            onClick={() => {
+              dismissNudge(threadId);
+              setNudgeOff(true);
+            }}
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      <Composer draftKey={threadId} conversation={conversation} defaultAgent={t.defaultAgent} cwd={info?.cwd} placeholder="Reply in thread…" onSend={send} autoFocus />
+      </div>
+      {promoting && info && <PromoteThreadDialog thread={info} from={conversation} onClose={() => setPromoting(false)} />}
     </aside>
   );
 }

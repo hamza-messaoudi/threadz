@@ -4,32 +4,90 @@ import { navigate } from '../lib/router.ts';
 import { useSseStatus } from '../lib/sse.ts';
 import { useAppData } from '../lib/store.tsx';
 import { NewChannelDialog } from './NewChannelDialog.tsx';
+import { AccChevron, Accordion } from './transitions.tsx';
 
 interface Props {
+  collapsed: boolean;
+  onToggle: () => void;
   activeId?: string;
   onSearch: () => void;
   newChannelOpen: boolean;
   setNewChannelOpen: (open: boolean) => void;
 }
 
-export function Sidebar({ activeId, onSearch, newChannelOpen, setNewChannelOpen }: Props) {
+const mac = navigator.platform.includes('Mac');
+const shortcut = (key: string) => (mac ? `⌘${key}` : `Ctrl ${key}`);
+
+export function Sidebar({ collapsed, onToggle, activeId, onSearch, newChannelOpen, setNewChannelOpen }: Props) {
+  const toggleTitle = `${collapsed ? 'Expand' : 'Collapse'} sidebar (${shortcut('B')})`;
+  // Both layers stay mounted and cross-fade (transitions.dev panel reveal) while the column resizes.
+  return (
+    <div className="sidebar-slot">
+      <nav className="sidebar">
+        <div className="side-layer side-full t-panel-slide" data-axis="x" data-open={!collapsed} inert={collapsed}>
+          <FullSidebar activeId={activeId} onSearch={onSearch} onNewChannel={() => setNewChannelOpen(true)} />
+        </div>
+        <div className="side-layer side-rail t-panel-slide" data-axis="x" data-open={collapsed} inert={!collapsed}>
+          <Rail onSearch={onSearch} onNewChannel={() => setNewChannelOpen(true)} />
+        </div>
+      </nav>
+      {/* One toggle for both states: it rides the column's edge and swaps its icon (transitions.dev icon swap). */}
+      <button className="rail-btn side-toggle-btn" onClick={onToggle} data-tooltip={toggleTitle} data-tooltip-side={collapsed ? 'right' : undefined} aria-label={toggleTitle} aria-expanded={!collapsed}>
+        <span className="t-icon-swap" data-state={collapsed ? 'b' : 'a'}>
+          <span className="t-icon" data-icon="a">
+            <Icon d={PANEL_CLOSE} />
+          </span>
+          <span className="t-icon" data-icon="b">
+            <Icon d={PANEL_OPEN} />
+          </span>
+        </span>
+      </button>
+      {newChannelOpen && <NewChannelDialog onClose={() => setNewChannelOpen(false)} />}
+    </div>
+  );
+}
+
+function Rail(props: { onSearch: () => void; onNewChannel: () => void }) {
+  const status = useSseStatus();
+  return (
+    <div className="rail">
+      <button className="rail-btn" onClick={props.onSearch} data-tooltip={`Search (${shortcut('K')})`} data-tooltip-side="right" aria-label="Search">
+        <Icon d={SEARCH} />
+      </button>
+      <button className="rail-btn" onClick={() => navigate({ view: 'conversation', conversationId: 'new' })} data-tooltip="New chat" data-tooltip-side="right" aria-label="New chat">
+        <Icon d={CHAT} />
+      </button>
+      <button className="rail-btn" onClick={props.onNewChannel} data-tooltip="New channel" data-tooltip-side="right" aria-label="New channel">
+        <Icon d={HASH} />
+      </button>
+      <span className="spacer" />
+      <span className={`conn conn-${status}`} data-tooltip={`Live updates: ${status}`} data-tooltip-side="right" />
+      <button className="rail-btn" onClick={() => navigate({ view: 'settings' })} data-tooltip="Settings" data-tooltip-side="right" aria-label="Settings">
+        <Icon d={GEAR} />
+      </button>
+    </div>
+  );
+}
+
+function FullSidebar(props: { activeId?: string; onSearch: () => void; onNewChannel: () => void }) {
+  const { activeId } = props;
   const { conversations, routines } = useAppData();
   const channels = conversations.filter((c) => c.kind === 'channel').sort((a, b) => a.name.localeCompare(b.name));
   const chats = conversations.filter((c) => c.kind === 'chat').sort((a, b) => (b.lastActivity ?? 0) - (a.lastActivity ?? 0));
   const status = useSseStatus();
 
   return (
-    <nav className="sidebar">
+    <>
       <div className="sidebar-head">
         <span className="brand">Agent Chat</span>
-        <span className={`conn conn-${status}`} title={`live updates: ${status}`} />
+        <span className={`conn conn-${status}`} data-tooltip={`Live updates: ${status}`} />
       </div>
-      <button className="search-trigger" onClick={onSearch}>
+      <button className="search-trigger" onClick={props.onSearch}>
         <span>Search</span>
-        <kbd>{navigator.platform.includes('Mac') ? '⌘K' : 'Ctrl K'}</kbd>
+        <kbd>{shortcut('K')}</kbd>
       </button>
 
-      <Section title="Channels" onAdd={() => setNewChannelOpen(true)} addLabel="New channel">
+      <Section title="Channels" onAdd={props.onNewChannel} addLabel="New channel">
         {channels.map((c) => (
           <Item key={c.id} c={c} active={c.id === activeId} prefix="#" />
         ))}
@@ -55,27 +113,49 @@ export function Sidebar({ activeId, onSearch, newChannelOpen, setNewChannelOpen 
           Settings
         </button>
       </div>
-      {newChannelOpen && <NewChannelDialog onClose={() => setNewChannelOpen(false)} />}
-    </nav>
+    </>
+  );
+}
+
+// 24×24 stroke paths (Lucide-style).
+const PANEL = 'M3 5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zM9 3v18';
+const PANEL_CLOSE = `${PANEL}M16 15l-3-3 3-3`;
+const PANEL_OPEN = `${PANEL}M14 9l3 3-3 3`;
+const SEARCH = 'M11 18a7 7 0 1 0 0-14 7 7 0 0 0 0 14zM21 21l-4.3-4.3';
+const CHAT = 'M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12zM12 9v6M9 12h6';
+const HASH = 'M4 9h16M4 15h16M10 3 8 21M16 3l-2 18';
+const GEAR =
+  'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z';
+
+function Icon({ d }: { d: string }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d={d} />
+    </svg>
   );
 }
 
 function Section(props: { title: string; onAdd?: () => void; addLabel?: string; children: React.ReactNode }) {
   const [open, setOpen] = useState(true);
   return (
-    <div className="side-section">
-      <div className="side-title">
-        <button className="side-toggle" onClick={() => setOpen(!open)}>
-          <span className={`caret ${open ? 'open' : ''}`}>▸</span> {props.title}
-        </button>
-        {props.onAdd && (
-          <button className="side-add" onClick={props.onAdd} title={props.addLabel} aria-label={props.addLabel}>
-            +
+    <Accordion
+      open={open}
+      className="side-section"
+      head={
+        <div className="side-title">
+          <button className="side-toggle t-acc-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+            {props.title} <AccChevron />
           </button>
-        )}
-      </div>
-      {open && <div className="side-items">{props.children}</div>}
-    </div>
+          {props.onAdd && (
+            <button className="side-add" onClick={props.onAdd} data-tooltip={props.addLabel} aria-label={props.addLabel}>
+              +
+            </button>
+          )}
+        </div>
+      }
+    >
+      <div className="side-items">{props.children}</div>
+    </Accordion>
   );
 }
 
@@ -84,7 +164,7 @@ function Item({ c, active, prefix }: { c: Conversation; active: boolean; prefix:
     <button className={`side-item ${active ? 'active' : ''}`} onClick={() => navigate({ view: 'conversation', conversationId: c.id })}>
       {prefix && <span className="hash">{prefix}</span>}
       <span className="side-name">{c.name}</span>
-      {c.yolo && <span className="yolo-dot" title="YOLO on" />}
+      {c.yolo && <span className="yolo-dot" data-tooltip="YOLO on" />}
     </button>
   );
 }

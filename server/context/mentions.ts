@@ -1,4 +1,5 @@
-export type MentionKind = 'agent' | 'workflow' | 'dir';
+/** `dir` references a directory for one message; `cd` moves the thread into it. */
+export type MentionKind = 'agent' | 'workflow' | 'dir' | 'cd';
 
 export interface Mention {
   kind: MentionKind;
@@ -10,8 +11,10 @@ export interface Mention {
 export interface ResolvedMentions {
   agents: string[];
   workflows: string[];
-  /** Directory id as sent by the client; the caller must check it against the index. */
-  dir: string | null;
+  /** Referenced directories, as sent by the client; the caller must check them against the index. */
+  dirs: string[];
+  /** Directory to move the thread into, likewise unchecked. */
+  move: string | null;
 }
 
 export interface MentionNames {
@@ -26,7 +29,7 @@ const AT_RE = /(^|[\s(])@([A-Za-z0-9][A-Za-z0-9_.-]*)/g;
  * parsing of `@name` only when no structure was sent, e.g. for plain pasted text.
  */
 export function resolveMentions(text: string, mentions: unknown, names: MentionNames): ResolvedMentions {
-  const out: ResolvedMentions = { agents: [], workflows: [], dir: null };
+  const out: ResolvedMentions = { agents: [], workflows: [], dirs: [], move: null };
   const add = (list: string[], id: string) => {
     if (!list.includes(id)) list.push(id);
   };
@@ -36,7 +39,8 @@ export function resolveMentions(text: string, mentions: unknown, names: MentionN
       if (!m || typeof m.id !== 'string') continue;
       if (m.kind === 'agent' && names.agents.has(m.id)) add(out.agents, m.id);
       else if (m.kind === 'workflow' && names.workflows.has(m.id)) add(out.workflows, m.id);
-      else if (m.kind === 'dir') out.dir = m.id; // one directory per message; the last one wins
+      else if (m.kind === 'dir') add(out.dirs, m.id);
+      else if (m.kind === 'cd') out.move = m.id; // one move per message; the last one wins
     }
     return out;
   }

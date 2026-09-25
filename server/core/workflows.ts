@@ -13,6 +13,8 @@ export interface WorkflowStepState {
 export interface WorkflowRunMeta {
   workflow: string;
   cwd: string;
+  /** Directories referenced by the triggering message; every step is told about them. */
+  dirs?: string[];
   input: string;
   step: number; // index of the current / failed step
   steps: WorkflowStepState[];
@@ -32,7 +34,7 @@ export class WorkflowEngine implements WorkflowService {
 
   constructor(private readonly ctx: AppContext) {}
 
-  start(opts: { workflow: string; thread: ThreadRow; trigger: MessageRow | null; cwd: string; mentions: unknown; input?: string }) {
+  start(opts: { workflow: string; thread: ThreadRow; trigger: MessageRow | null; cwd: string; dirs?: string[]; mentions: unknown; input?: string }) {
     const { store, hub } = this.ctx;
     const wf = this.ctx.cfg.workflows[opts.workflow];
     if (!wf) throw new HttpError(400, `unknown workflow "${opts.workflow}"`);
@@ -48,6 +50,7 @@ export class WorkflowEngine implements WorkflowService {
     const meta: WorkflowRunMeta = {
       workflow: wf.name,
       cwd: opts.cwd,
+      dirs: opts.dirs?.length ? opts.dirs : undefined,
       input,
       step: 0,
       steps: wf.steps.map((s) => ({ agent: s.agent, status: 'pending' })),
@@ -130,7 +133,7 @@ export class WorkflowEngine implements WorkflowService {
         threadId,
         agentName: step.agent,
         cwd: meta.cwd,
-        trigger: { messageId: stepMsg.id, seq: stepMsg.done_seq!, text: prompt, from: `workflow:${wf.name}` },
+        trigger: { messageId: stepMsg.id, seq: stepMsg.done_seq!, text: prompt, from: `workflow:${wf.name}`, dirs: meta.dirs },
         runId,
       });
       meta.steps[i] = { agent: step.agent, status: 'running', messageId: turn.messageId };

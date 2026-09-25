@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, type DirResult } from '../lib/api.ts';
 import { createDir, createFirst, createOptions, tildify, type CreateOption } from '../lib/dirs.ts';
 import { useAppData } from '../lib/store.tsx';
+import { useDropdown } from '../lib/useDropdown.ts';
 
 type Row = { kind: 'dir'; dir: DirResult } | { kind: 'create'; opt: CreateOption };
 
@@ -37,6 +38,7 @@ export function DirField({ value, onChange }: { value: string | null; onChange: 
   const found: Row[] = items.map((dir) => ({ kind: 'dir' as const, dir }));
   const creates: Row[] = createOptions(q, config?.dirRoots ?? [], items).map((opt) => ({ kind: 'create' as const, opt }));
   const rows = createFirst(q, items) ? [...creates, ...found] : [...found, ...creates];
+  const { shown: menuView, className: menuClass } = useDropdown(open ? { rows, sel } : null);
 
   const pick = async (row: Row) => {
     setError(null);
@@ -103,11 +105,11 @@ export function DirField({ value, onChange }: { value: string | null; onChange: 
         spellCheck={false}
         disabled={busy}
       />
-      {open && (
-        <div className="dir-dropdown">
-          {rows.map((row, i) =>
+      {menuView && (
+        <div className={`dir-dropdown ${menuClass}`} data-origin="top-left">
+          {menuView.rows.map((row, i) =>
             row.kind === 'dir' ? (
-              <button type="button" key={row.dir.path} className={`dd-item ${i === sel ? 'sel' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(row)}>
+              <button type="button" key={row.dir.path} className={`dd-item ${i === menuView.sel ? 'sel' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(row)}>
                 <span className="dd-title">
                   {row.dir.name} {row.dir.branch && <span className="branch">{row.dir.branch}</span>} {row.dir.recent && <span className="dd-kind">recent</span>}
                 </span>
@@ -117,7 +119,7 @@ export function DirField({ value, onChange }: { value: string | null; onChange: 
               <button
                 type="button"
                 key={`create:${row.opt.root}`}
-                className={`dd-item create ${i === sel ? 'sel' : ''}`}
+                className={`dd-item create ${i === menuView.sel ? 'sel' : ''}`}
                 onMouseDown={(e) => e.preventDefault()}
                 onClick={() => pick(row)}
               >
@@ -130,7 +132,7 @@ export function DirField({ value, onChange }: { value: string | null; onChange: 
               </button>
             ),
           )}
-          {!rows.length && (
+          {!menuView.rows.length && (
             <div className="dd-empty">
               {config?.dirRoots.length
                 ? 'Type a folder name to find it, or to create a new one.'

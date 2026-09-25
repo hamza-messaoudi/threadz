@@ -12,7 +12,7 @@ test('a message without diagrams never downloads the Mermaid chunk', async ({ pa
 });
 
 for (const scheme of ['light', 'dark'] as const) {
-  test(`flowchart, sequence, state and ER diagrams render with dashed edges and Geist Mono (${scheme})`, async ({ page }) => {
+  test(`flowchart, sequence, state and ER diagrams render with dashed edges and Hack (${scheme})`, async ({ page }) => {
     const urls: string[] = [];
     page.on('request', (r) => urls.push(r.url()));
     await openLab(page, 'mermaid', scheme);
@@ -27,7 +27,7 @@ for (const scheme of ['light', 'dark'] as const) {
         const texts = [...svg.querySelectorAll('text, .nodeLabel')];
         return {
           dashed: edges.length > 0 && edges.every((e) => getComputedStyle(e).strokeDasharray.replace(/px/g, '').trim() === '2, 5'),
-          mono: texts.length > 0 && texts.every((t) => getComputedStyle(t).fontFamily.includes('Geist Mono')),
+          mono: texts.length > 0 && texts.every((t) => getComputedStyle(t).fontFamily.includes('Hack')),
           fits: svg.getBoundingClientRect().width <= f.getBoundingClientRect().width + 1,
           scripts: svg.querySelectorAll('script, foreignObject, [onclick]').length,
         };

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, type SearchResult } from '../lib/api.ts';
+import { useModal } from '../lib/useModal.ts';
 import { navigate } from '../lib/router.ts';
 import { cleanSnippet } from '../lib/snippet.ts';
 import { agentColor } from '../lib/store.tsx';
@@ -10,6 +11,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
   const [sel, setSel] = useState(0);
   const [loading, setLoading] = useState(false);
   const list = useRef<HTMLDivElement>(null);
+  const { close, modalClass, backdropClass } = useModal(onClose);
 
   useEffect(() => {
     if (!q.trim()) {
@@ -40,20 +42,20 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
   }, [sel]);
 
   const open = (r: SearchResult) => {
-    onClose();
+    close();
     navigate({ view: 'conversation', conversationId: r.conversationId, threadId: r.inThread ? r.threadId : undefined, messageId: r.messageId });
   };
 
   return (
-    <div className="modal-backdrop" onMouseDown={onClose}>
-      <div className="modal palette" onMouseDown={(e) => e.stopPropagation()}>
+    <div className={backdropClass} onMouseDown={close}>
+      <div className={`modal palette ${modalClass}`} onMouseDown={(e) => e.stopPropagation()}>
         <input
           autoFocus
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search messages…  in:#channel  from:@agent  from:me"
           onKeyDown={(e) => {
-            if (e.key === 'Escape') onClose();
+            if (e.key === 'Escape') close();
             else if (e.key === 'ArrowDown') {
               e.preventDefault();
               setSel((s) => Math.min(s + 1, results.length - 1));

@@ -1,18 +1,25 @@
 import { useEffect, useState } from 'react';
 import type { ChildThread, Message, Run } from '../lib/api.ts';
-import { MessageView } from './Message.tsx';
+import { MessageView, type BlockRange } from './Message.tsx';
+
+/** A run of blocks in one message. */
+export interface Passage extends BlockRange {
+  messageId: string;
+}
 
 interface Props {
   messages: Message[];
   childThreads?: ChildThread[];
   runs?: Record<string, Run>;
-  onOpenThread?: (m: Message, blockIndex: number) => void;
+  onOpenThread?: (m: Message, start: number, end?: number) => void;
+  onExtendPassage?: (m: Message, blockIndex: number, at: DOMRect) => void;
   allowThreads?: boolean;
-  activeSource?: { messageId: string; blockIndex: number } | null;
+  activeSource?: Passage | null;
+  pending?: Passage | null;
   focusId?: string;
 }
 
-export function MessageList({ messages, childThreads, runs, onOpenThread, allowThreads, activeSource, focusId }: Props) {
+export function MessageList({ messages, childThreads, runs, onOpenThread, onExtendPassage, allowThreads, activeSource, pending, focusId }: Props) {
   const [flashId, setFlashId] = useState<string | null>(null);
 
   // Scroll to and flash a message (search results, deep links).
@@ -35,8 +42,10 @@ export function MessageList({ messages, childThreads, runs, onOpenThread, allowT
           childThreads={childThreads}
           run={m.runId ? runs?.[m.runId] : undefined}
           onOpenThread={onOpenThread}
+          onExtendPassage={onExtendPassage}
           allowThreads={allowThreads}
-          activeBlock={activeSource?.messageId === m.id ? activeSource.blockIndex : null}
+          activeRange={activeSource?.messageId === m.id ? activeSource : null}
+          pendingRange={pending?.messageId === m.id ? pending : null}
           flash={flashId === m.id}
         />
       ))}
