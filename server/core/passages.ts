@@ -19,7 +19,8 @@ export interface OpenedPassage {
  */
 export function openPassage(ctx: AppContext, msg: MessageRow, start: number, end: number, blocks: string[]): OpenedPassage {
   const { store } = ctx;
-  const all = store.threadsOnMessage(msg.id);
+  // A thread whose passage an edit removed is detached (negative blocks): it is on no block any more.
+  const all = store.threadsOnMessage(msg.id).filter((t) => (t.block_index ?? -1) >= 0);
   // Grow the range until no thread sticks out of it (older data can hold overlapping threads).
   let lo = start;
   let hi = end;
@@ -98,7 +99,7 @@ function shown(m: MessageRow): boolean {
 const byId = (a: MessageRow, b: MessageRow) => (a.id < b.id ? -1 : 1);
 
 function renderWidened(thread: ThreadRow, source: MessageRow | undefined, absorbed: number): string {
-  const context = renderThreadContext(thread, source).replace('<thread_context>', '').replace('</thread_context>', '').trim();
+  const context = renderThreadContext(thread, source).split('\n\n<document_editing>')[0].replace('<thread_context>', '').replace('</thread_context>', '').trim();
   const what = absorbed
     ? `The user merged ${absorbed === 1 ? 'another side thread' : `${absorbed} other side threads`} into this one, so it now covers a wider passage.`
     : 'The user widened the passage this side thread is about.';

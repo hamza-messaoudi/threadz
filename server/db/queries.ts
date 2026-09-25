@@ -30,6 +30,9 @@ export interface ThreadRow {
   dir: string | null;
   /** Set when a side thread became its own channel: the thread it was opened from. */
   origin_thread_id: string | null;
+  /** An edit of the document changed ('changed') or removed ('removed') the passage (007-document-versions.sql). */
+  anchor: 'changed' | 'removed' | null;
+  anchor_version: number | null;
   created_at: number;
 }
 
@@ -64,6 +67,8 @@ export interface SessionRow {
   updated_at: number;
   /** Context to send once ahead of the next turn (see 005-session-pending.sql). */
   pending: string | null;
+  /** JSON {document message id: version read}; NULL = read version 1 (see 007-document-versions.sql). */
+  doc_versions: string | null;
 }
 
 /** A document's reader session (see 006-document-sessions.sql). */
@@ -73,6 +78,20 @@ export interface ReaderSessionRow {
   cwd: string;
   claude_session_id: string;
   flags_hash: string;
+  /** The document version it read. */
+  version: number;
+  created_at: number;
+}
+
+/** One version of a shared document (see 007-document-versions.sql). */
+export interface DocVersionRow {
+  message_id: string;
+  version: number;
+  content_md: string;
+  author_kind: 'user' | 'agent';
+  author_id: string | null;
+  thread_id: string | null;
+  restored_from: number | null;
   created_at: number;
 }
 
@@ -242,10 +261,10 @@ export class Store {
       }
       this.db.prepare(`UPDATE threads SET block_index = ?, block_end = ?, block_text = ? WHERE id = ?`).run(passage.start, passage.end, passage.text, into);
       const put = this.db.prepare(
-        `INSERT INTO agent_sessions (thread_id, agent_id, cwd, claude_session_id, last_seen_seq, flags_hash, updated_at, pending)
-         VALUES (@thread_id, @agent_id, @cwd, @claude_session_id, @last_seen_seq, @flags_hash, @updated_at, @pending)`,
+        `INSERT INTO agent_sessions (thread_id, agent_id, cwd, claude_session_id, last_seen_seq, flags_hash, updated_at, pending, doc_versions)
+         VALUES (@thread_id, @agent_id, @cwd, @claude_session_id, @last_seen_seq, @flags_hash, @updated_at, @pending, @doc_versions)`,
       );
-      for (const s of sessions) put.run({ ...s, thread_id: into });
+      for (const s of sessions) put.run({ ...s, doc_versions: s.doc_versions ?? null, thread_id: into });
     })();
   }
 
@@ -267,7 +286,8 @@ export class Store {
   childThreadSummaries(threadId: string) {
     return this.db
       .prepare(
-        `SELECT t.id, t.parent_message_id, t.block_index, t.block_end, t.created_at,
+        `SELECT t.id, t.parent_message_id, t.block_index, t.block_end, t.anchor, t.anchor_version, t.created_at,
+                CASE WHEN t.block_index < 0 THEN substr(t.block_text, 1, 160) END AS quote,
                 COUNT(m.id) AS reply_count, MAX(m.created_at) AS last_activity,
                 CASE WHEN t.origin_thread_id IS NULL THEN NULL ELSE c.id END AS channel_id,
                 CASE WHEN t.origin_thread_id IS NULL THEN NULL ELSE c.name END AS channel_name
@@ -282,6 +302,9 @@ export class Store {
       parent_message_id: string;
       block_index: number;
       block_end: number;
+      anchor: ThreadRow['anchor'];
+      anchor_version: number | null;
+      quote: string | null;
       created_at: number;
       reply_count: number;
       last_activity: number | null;
@@ -386,16 +409,21 @@ export class Store {
   }
 
   /** Writing a session means its turn started, so any pending context has been sent: it is cleared. */
-  upsertSession(s: Omit<SessionRow, 'updated_at' | 'pending'>): void {
+  upsertSession(s: Omit<SessionRow, 'updated_at' | 'pending' | 'doc_versions'> & { doc_versions?: string | null }): void {
     this.db
       .prepare(
-        `INSERT INTO agent_sessions (thread_id, agent_id, cwd, claude_session_id, last_seen_seq, flags_hash, updated_at)
-         VALUES (@thread_id, @agent_id, @cwd, @claude_session_id, @last_seen_seq, @flags_hash, @updated_at)
+        `INSERT INTO agent_sessions (thread_id, agent_id, cwd, claude_session_id, last_seen_seq, flags_hash, updated_at, doc_versions)
+         VALUES (@thread_id, @agent_id, @cwd, @claude_session_id, @last_seen_seq, @flags_hash, @updated_at, @doc_versions)
          ON CONFLICT (thread_id, agent_id, cwd) DO UPDATE SET
            claude_session_id = excluded.claude_session_id, last_seen_seq = excluded.last_seen_seq,
-           flags_hash = excluded.flags_hash, updated_at = excluded.updated_at, pending = NULL`,
+           flags_hash = excluded.flags_hash, updated_at = excluded.updated_at, pending = NULL,
+           doc_versions = COALESCE(excluded.doc_versions, agent_sessions.doc_versions)`,
       )
-      .run({ ...s, updated_at: Date.now() });
+      .run({ doc_versions: null, ...s, updated_at: Date.now() });
+  }
+
+  setSessionDocVersions(threadId: string, agentId: string, cwd: string, docVersions: string): void {
+    this.db.prepare(`UPDATE agent_sessions SET doc_versions = ? WHERE thread_id = ? AND agent_id = ? AND cwd = ?`).run(docVersions, threadId, agentId, cwd);
   }
 
   clearPending(threadId: string, agentId: string, cwd: string): void {
@@ -430,16 +458,60 @@ export class Store {
   saveReaderSession(s: Omit<ReaderSessionRow, 'created_at'>): void {
     this.db
       .prepare(
-        `INSERT INTO document_sessions (message_id, agent_id, cwd, claude_session_id, flags_hash, created_at)
-         VALUES (@message_id, @agent_id, @cwd, @claude_session_id, @flags_hash, @created_at)
+        `INSERT INTO document_sessions (message_id, agent_id, cwd, claude_session_id, flags_hash, version, created_at)
+         VALUES (@message_id, @agent_id, @cwd, @claude_session_id, @flags_hash, @version, @created_at)
          ON CONFLICT (message_id, agent_id, cwd) DO UPDATE SET
-           claude_session_id = excluded.claude_session_id, flags_hash = excluded.flags_hash, created_at = excluded.created_at`,
+           claude_session_id = excluded.claude_session_id, flags_hash = excluded.flags_hash, version = excluded.version, created_at = excluded.created_at`,
       )
       .run({ ...s, created_at: Date.now() });
   }
 
   deleteReaderSession(messageId: string, agentId: string, cwd: string): void {
     this.db.prepare(`DELETE FROM document_sessions WHERE message_id = ? AND agent_id = ? AND cwd = ?`).run(messageId, agentId, cwd);
+  }
+
+  // ---- document versions ----
+
+  getDocVersion(messageId: string, version: number): DocVersionRow | undefined {
+    return this.db.prepare(`SELECT * FROM document_versions WHERE message_id = ? AND version = ?`).get(messageId, version) as DocVersionRow | undefined;
+  }
+
+  /** Oldest first, without the text. */
+  listDocVersions(messageId: string): (Omit<DocVersionRow, 'content_md'> & { chars: number })[] {
+    return this.db
+      .prepare(
+        `SELECT message_id, version, author_kind, author_id, thread_id, restored_from, created_at, length(content_md) AS chars
+         FROM document_versions WHERE message_id = ? ORDER BY version`,
+      )
+      .all(messageId) as any;
+  }
+
+  /**
+   * Saves a new version of a document in one transaction: the version row (and version 1 before it, the
+   * first time), the message's text and meta, the threads the edit re-anchored, and the reader sessions
+   * that read an older version (they are not forked any more).
+   */
+  saveDocVersion(input: {
+    message: MessageRow;
+    first: Omit<DocVersionRow, 'message_id'> | null;
+    version: Omit<DocVersionRow, 'message_id'>;
+    meta: unknown;
+    anchors: { id: string; block_index: number; block_end: number; anchor: ThreadRow['anchor']; anchor_version: number | null }[];
+  }): void {
+    const put = this.db.prepare(
+      `INSERT INTO document_versions (message_id, version, content_md, author_kind, author_id, thread_id, restored_from, created_at)
+       VALUES (@message_id, @version, @content_md, @author_kind, @author_id, @thread_id, @restored_from, @created_at)`,
+    );
+    this.db.transaction(() => {
+      if (input.first) put.run({ ...input.first, message_id: input.message.id });
+      put.run({ ...input.version, message_id: input.message.id });
+      this.db.prepare(`UPDATE messages SET content_md = ?, meta = ? WHERE id = ?`).run(input.version.content_md, json(input.meta), input.message.id);
+      // Two passes, so a thread can move onto a place another one is leaving (UNIQUE passage).
+      const move = this.db.prepare(`UPDATE threads SET block_index = ?, block_end = ?, anchor = ?, anchor_version = ? WHERE id = ?`);
+      input.anchors.forEach((a, i) => move.run(-1_000_000 - i, -1_000_000 - i, a.anchor, a.anchor_version, a.id));
+      for (const a of input.anchors) move.run(a.block_index, a.block_end, a.anchor, a.anchor_version, a.id);
+      this.db.prepare(`DELETE FROM document_sessions WHERE message_id = ? AND version != ?`).run(input.message.id, input.version.version);
+    })();
   }
 
   // ---- runs ----

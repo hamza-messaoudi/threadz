@@ -2,7 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AppContext } from '../app.ts';
 import { maxSeq, renderMessage, renderUpdate, selectDelta } from '../context/delta.ts';
-import { documentMeta, READER_MIN_CHARS, renderReaderNote, type DocumentMeta } from '../context/documents.ts';
+import { docVersion, DOCUMENT_EDIT_HELP, documentMeta, READER_MIN_CHARS, renderDocumentUpdate, renderReaderNote, type DocumentMeta } from '../context/documents.ts';
+import { applyAgentEdits, parseDocumentEdits } from '../core/documents.ts';
 import { renderSeed } from '../context/seed.ts';
 import type { ConversationRow, MessageRow, SessionRow, ThreadRow } from '../db/queries.ts';
 import { serializeMessage } from '../core/serialize.ts';
@@ -52,6 +53,8 @@ interface Prepared {
    * its own (this turn, and the prompt that makes it), then fork that. Later threads fork it too.
    */
   prime?: { document: MessageRow; meta: DocumentMeta; args: SessionArgs; prompt: string };
+  /** The version of each shared document the session has read once this prompt is sent. */
+  docs: Record<string, number>;
 }
 
 /**
@@ -271,6 +274,7 @@ export class TurnRunner {
             claude_session_id: e.sessionId,
             last_seen_seq: prep.cursor,
             flags_hash: hash,
+            doc_versions: JSON.stringify(prep.docs),
           });
           // A session forked after a move has sent the pending context of the one it came from.
           if (prep.from && 'threadId' in prep.from) store.clearPending(prep.from.threadId, req.agentName, prep.from.cwd);
@@ -339,7 +343,16 @@ export class TurnRunner {
 
     if (res && !res.isError && exit.code === 0) {
       if (!text.trim() && res.text) text = res.text;
-      return this.finish(msg, 'done', { content_md: text, usage: usageJson }, text);
+      // Document edits in the reply are applied now, and shown as their results instead of as text.
+      const { text: shown, edits } = parseDocumentEdits(text);
+      if (!edits.length) return this.finish(msg, 'done', { content_md: text, usage: usageJson }, text);
+      const results = await applyAgentEdits(this.ctx, thread, req.agentName, edits, prep.docs);
+      // An edit applied to the version the session had read: it knows the new text, having written it.
+      const known = { ...prep.docs };
+      for (const r of results) if (r.status === 'applied' && !r.rebased && r.documentId && known[r.documentId] === r.previous) known[r.documentId] = r.version!;
+      if (sessionId) store.setSessionDocVersions(req.threadId, req.agentName, req.cwd, JSON.stringify(known));
+      const meta = { ...(store.getMessage(msg.id)!.meta ? JSON.parse(store.getMessage(msg.id)!.meta!) : {}), documentEdits: results };
+      return this.finish(msg, 'done', { content_md: shown, usage: usageJson, meta: JSON.stringify(meta) }, shown);
     }
 
     const errText = [res?.errors?.join('; '), res?.isError ? res.text : undefined, exit.spawnError, exit.stderrTail.trim()]
@@ -391,13 +404,15 @@ export class TurnRunner {
     if (entry) entry.proc = undefined;
     const res = result as Extract<RunnerEvent, { type: 'result' }> | null;
     if (!sessionId || !res || res.isError || exit.code !== 0) return null;
-    this.ctx.store.saveReaderSession({ message_id: prime.document.id, agent_id: run.agent, cwd: run.cwd, claude_session_id: sessionId, flags_hash: run.hash });
+    this.ctx.store.saveReaderSession({ message_id: prime.document.id, agent_id: run.agent, cwd: run.cwd, claude_session_id: sessionId, flags_hash: run.hash, version: docVersion(prime.meta) });
     return res.usage ? { ...res.usage, iterations: undefined, total_cost_usd: res.costUsd } : {};
   }
 
   /**
    * Session resolution for (thread, agent, cwd): resume, fork from the parent thread or a document's
    * reader, or seed. With `prime` off, a missing reader is not made (the document goes in the prompt).
+   * A session that has read an older version of a document it works on is told what changed, once,
+   * appended like the delta: the edit is new context, not a new session.
    */
   private prepare(thread: ThreadRow, conversation: ConversationRow, req: TurnRequest, hashAt: (cwd: string) => string, prime = true): Prepared {
     const { store } = this.ctx;
@@ -407,6 +422,15 @@ export class TurnRunner {
     const exclude = req.trigger.messageId ? [req.trigger.messageId] : [];
     const message = join(renderDirRefs(req.trigger.dirs, req.cwd), renderMessage(req.trigger.from, req.trigger.text));
     const triggerSeq = req.trigger.seq ?? 0;
+
+    // A channel made from a side thread still starts from its passage: an agent new to it forks or reads
+    // the discussion the passage came from, like in the side thread.
+    const originId = thread.parent_thread_id ?? thread.origin_thread_id;
+    const isParagraph = !!originId && !!thread.parent_message_id;
+    const source = isParagraph ? store.getMessage(thread.parent_message_id!) : undefined;
+    // The documents a session here works on: the passage's, or those shared in this (main) thread.
+    const docs = isParagraph ? (documentMeta(source) ? [source!] : []) : threadMsgs.filter((m) => documentMeta(m));
+    const current = Object.fromEntries(docs.map((d) => [d.id, docVersion(documentMeta(d))]));
 
     let session: SessionRow | undefined = store.getSession(thread.id, req.agentName, req.cwd);
     if (session && session.flags_hash !== hash) {
@@ -419,13 +443,15 @@ export class TurnRunner {
     if (session) {
       const delta = selectDelta(threadMsgs, req.agentName, session.last_seen_seq, exclude);
       if (session.pending) markers.push('caught up on the merged thread');
+      const upd = this.docUpdates(docs, session, thread, markers);
       return {
         kind: 'resume',
         args: { resume: session.claude_session_id },
-        prompt: join(session.pending ?? '', renderUpdate(delta), message),
+        prompt: join(session.pending ?? '', upd, renderUpdate(delta), message),
         cursor: maxSeq(delta, Math.max(triggerSeq, session.last_seen_seq)),
         markers,
         from: { threadId: thread.id, cwd: req.cwd },
+        docs: current,
       };
     }
 
@@ -434,21 +460,18 @@ export class TurnRunner {
     if (before && before.flags_hash === hashAt(before.cwd)) {
       const delta = selectDelta(threadMsgs, req.agentName, before.last_seen_seq, exclude);
       markers.push(`moved to ${path.basename(req.cwd)}, session carried over`);
+      const upd = this.docUpdates(docs, before, thread, markers);
       return {
         kind: 'fork',
         args: { resume: before.claude_session_id, fork: true },
-        prompt: join(before.pending ?? '', renderUpdate(delta), renderMove(before.cwd, req.cwd), message),
+        prompt: join(before.pending ?? '', upd, renderUpdate(delta), renderMove(before.cwd, req.cwd), message),
         cursor: maxSeq(delta, Math.max(triggerSeq, before.last_seen_seq)),
         markers,
         from: { threadId: thread.id, cwd: before.cwd },
+        docs: current,
       };
     }
 
-    // A channel made from a side thread still starts from its passage: an agent new to it forks or reads
-    // the discussion the passage came from, like in the side thread.
-    const originId = thread.parent_thread_id ?? thread.origin_thread_id;
-    const isParagraph = !!originId && !!thread.parent_message_id;
-    const source = isParagraph ? store.getMessage(thread.parent_message_id!) : undefined;
     const threadContext = isParagraph ? renderThreadContext(thread, source) : '';
     const priorInThread = threadMsgs.filter((m) => !exclude.includes(m.id));
 
@@ -460,10 +483,11 @@ export class TurnRunner {
     const sideSoFar = selectDelta(priorInThread, req.agentName, 0);
 
     // 3. A long document the parent session has not read: fork the document's reader session, which
-    //    has, so the document is a cache read. The first thread per agent makes the reader.
+    //    has, so the document is a cache read. The first thread per agent makes the reader. A reader of
+    //    an older version is not forked: the new version is read once more (NOTES.md, cache trade-off).
     if (doc && source!.content_md.length >= READER_MIN_CHARS && !(parentOk && parent!.last_seen_seq >= (source!.done_seq ?? Infinity))) {
       const reader = store.getReaderSession(source!.id, req.agentName, req.cwd);
-      if (reader && reader.flags_hash === hash) {
+      if (reader && reader.flags_hash === hash && reader.version === docVersion(doc)) {
         markers.push(`${doc.name} already read, session forked`);
         return {
           kind: 'fork',
@@ -472,6 +496,7 @@ export class TurnRunner {
           cursor: maxSeq(priorInThread, triggerSeq),
           markers,
           from: { documentId: source!.id, cwd: req.cwd },
+          docs: current,
         };
       }
       if (prime) {
@@ -479,22 +504,25 @@ export class TurnRunner {
         const upto = store.doneMessages(originId!, { uptoId: source!.id });
         const before = parentOk ? renderUpdate(selectDelta(upto, req.agentName, parent!.last_seen_seq)) : renderSeed(upto, req.agentName).text;
         const args: SessionArgs = parentOk ? { resume: parent!.claude_session_id, fork: true } : {};
-        return { kind: 'seed', args: {}, prompt: '', cursor: 0, markers, prime: { document: source!, meta: doc, args, prompt: join(before, renderReaderNote(doc)) } };
+        return { kind: 'seed', args: {}, prompt: '', cursor: 0, markers, prime: { document: source!, meta: doc, args, prompt: join(before, renderReaderNote(doc)) }, docs: current };
       }
     }
 
-    // 4. Paragraph thread whose parent thread has a session for this agent: fork it.
+    // 4. Paragraph thread whose parent thread has a session for this agent: fork it. If that session
+    //    read an older version of the document, the fork is told what changed first.
     if (isParagraph && parentOk) {
       const parentMsgs = store.doneMessages(originId!, { uptoId: thread.parent_message_id! });
       const parentDelta = selectDelta(parentMsgs, req.agentName, parent!.last_seen_seq);
       markers.push(thread.origin_thread_id ? 'session forked from the conversation this channel grew out of' : 'thread session forked from the main conversation');
+      const upd = this.docUpdates(docs, parent!, thread, markers);
       return {
         kind: 'fork',
         args: { resume: parent!.claude_session_id, fork: true },
-        prompt: join(renderUpdate(parentDelta), threadContext, renderUpdate(sideSoFar, 'side_thread_so_far'), message),
+        prompt: join(upd, renderUpdate(parentDelta), threadContext, renderUpdate(sideSoFar, 'side_thread_so_far'), message),
         cursor: maxSeq(priorInThread, triggerSeq),
         markers,
         from: { threadId: originId!, cwd: req.cwd },
+        docs: current,
       };
     }
 
@@ -512,7 +540,48 @@ export class TurnRunner {
       prompt: join(seed.text, threadContext, message),
       cursor: maxSeq(priorInThread, triggerSeq),
       markers,
+      docs: current,
     };
+  }
+
+  /**
+   * What a session (resumed, or forked from) must be told about documents edited since it read them:
+   * one <document_updated> per document, from the version it read to the current one. A document it has
+   * not read yet (shared after its cursor) is not here: it comes in full with the delta. A session from
+   * before documents could be edited also learns how to edit them.
+   */
+  private docUpdates(docs: MessageRow[], session: SessionRow, thread: ThreadRow, markers: string[]): string {
+    const { store } = this.ctx;
+    const known: Record<string, number> | null = session.doc_versions ? JSON.parse(session.doc_versions) : null;
+    const out: string[] = [];
+    let seen = 0;
+    for (const d of docs) {
+      if ((d.done_seq ?? 0) > session.last_seen_seq) continue;
+      seen++;
+      const meta = documentMeta(d)!;
+      const had = known?.[d.id] ?? 1;
+      const now = docVersion(meta);
+      if (had >= now) continue;
+      const from = store.getDocVersion(d.id, had);
+      const editors = [
+        ...new Set(
+          store
+            .listDocVersions(d.id)
+            .filter((v) => v.version > had)
+            .map((v) => (v.author_kind === 'agent' ? (v.author_id === session.agent_id ? 'you' : `agent:${v.author_id}`) : 'the user')),
+        ),
+      ];
+      const mine = thread.parent_message_id === d.id && thread.anchor && (thread.anchor_version ?? 0) > had;
+      const passage = !mine
+        ? undefined
+        : thread.anchor === 'removed'
+          ? 'The passage this side thread is about is no longer in the document as it was quoted: the edit removed or rewrote it.'
+          : 'The edit changed the passage this side thread is about; it was quoted as it read before.';
+      out.push(renderDocumentUpdate(meta, d.content_md, from ? { version: had, content: from.content_md } : null, editors, passage));
+      markers.push(`read ${meta.name} version ${now}`);
+    }
+    if (!known && seen) out.unshift(DOCUMENT_EDIT_HELP);
+    return join(...out);
   }
 }
 
@@ -542,8 +611,10 @@ export function renderThreadContext(thread: ThreadRow, source: MessageRow | unde
   const what = n > 1 ? `these ${n} consecutive passages` : passage;
   const opened = thread.origin_thread_id ? `This channel grew out of a side thread the user opened on ${what}` : `The user opened a side thread on ${what}`;
   const doc = documentMeta(source);
-  if (doc)
-    return `<thread_context>\n${opened} of the document "${doc.name}" they shared earlier (its full text is above in this conversation):\n${quoted}\nAnswer with the whole document in mind, not only ${passage}. The main discussion continues separately.\n</thread_context>`;
+  if (doc) {
+    const since = thread.anchor === 'removed' ? `An edit has since removed ${passage} from the document, as quoted.\n` : thread.anchor === 'changed' ? `An edit has since changed ${passage}; the quote is how it read before.\n` : '';
+    return `<thread_context>\n${opened} of the document "${doc.name}" they shared earlier (its full text is above in this conversation):\n${quoted}\n${since}Answer with the whole document in mind, not only ${passage}. The main discussion continues separately.\n</thread_context>\n\n${DOCUMENT_EDIT_HELP}`;
+  }
   return `<thread_context>\n${opened} from an earlier message by ${author}:\n${quoted}\nFocus on ${passage}. The main discussion continues separately.\n</thread_context>`;
 }
 
