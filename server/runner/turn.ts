@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AppContext } from '../app.ts';
 import { maxSeq, renderMessage, renderUpdate, selectDelta } from '../context/delta.ts';
+import { documentMeta, READER_MIN_CHARS, renderReaderNote, type DocumentMeta } from '../context/documents.ts';
 import { renderSeed } from '../context/seed.ts';
 import type { ConversationRow, MessageRow, SessionRow, ThreadRow } from '../db/queries.ts';
 import { serializeMessage } from '../core/serialize.ts';
@@ -45,7 +46,12 @@ interface Prepared {
   markers: string[];
   kind: 'resume' | 'fork' | 'seed';
   /** The stored session this turn resumes or forks, dropped if its transcript is gone. */
-  from?: { threadId: string; cwd: string };
+  from?: { threadId: string; cwd: string } | { documentId: string; cwd: string };
+  /**
+   * A long document's first side thread for this agent: read the document once in a reader session of
+   * its own (this turn, and the prompt that makes it), then fork that. Later threads fork it too.
+   */
+  prime?: { document: MessageRow; meta: DocumentMeta; args: SessionArgs; prompt: string };
 }
 
 /**
@@ -73,6 +79,9 @@ interface ThinkingEvent {
 }
 
 const FLUSH_MS = 500;
+
+/** Marker of a turn whose agent is reading a document first (the chat shows "Reading the document…"). */
+export const READING_MARKER = 'reading';
 
 export class TurnRunner {
   readonly semaphore: Semaphore;
@@ -195,7 +204,40 @@ export class TurnRunner {
     const bin = cfg.config.claudeBin;
     const hashAt = (cwd: string) => flagsHash(bin, spawnAgent, mode, cwd);
     const hash = hashAt(req.cwd);
-    const prep = this.prepare(thread, conversation, req, hashAt);
+    const env = childEnv({
+      AGENT_MODE: conversation.yolo ? 'yolo' : 'readonly',
+      AGENT_TOOLS: JSON.stringify(agent.tools ?? []),
+      AGENT_CHAT_RUN_ID: req.runId ?? msg.id,
+      AGENT_CHAT_GATE_CONFIG: paths.gateJson,
+      AGENT_CHAT_HOOK_LOG: paths.hookLog,
+    });
+    let prep = this.prepare(thread, conversation, req, hashAt);
+    // The reader turn's usage, kept with this message so the cost of reading the document shows up.
+    let readerUsage: unknown = null;
+    if (prep.prime) {
+      // One reader per (document, agent, cwd): a thread opened meanwhile waits for it, then forks it.
+      let release: () => void;
+      try {
+        release = await this.locks.acquire(JSON.stringify(['reader', prep.prime.document.id, req.agentName, req.cwd]), signal);
+      } catch {
+        return this.finish(msg, 'cancelled', {});
+      }
+      try {
+        prep = this.prepare(thread, conversation, req, hashAt);
+        if (prep.prime) {
+          const { meta } = prep.prime;
+          store.updateMessage(msg.id, { status: 'streaming', markers: JSON.stringify([`${READING_MARKER} ${meta.name}…`]) });
+          this.emitUpdate(msg.id, req.threadId);
+          readerUsage = await this.readDocument(msg.id, prep.prime, { bin, args: buildArgs(spawnAgent, prep.prime.args, mode), cwd: req.cwd, env, hash, agent: req.agentName });
+          if (signal.aborted) return this.finish(msg, 'cancelled', {});
+          // Read: fork the reader. Not read: the document goes with this thread's own prompt instead.
+          prep = this.prepare(thread, conversation, req, hashAt, false);
+          if (readerUsage) prep.markers = [`read ${meta.name} once for all its threads`];
+        }
+      } finally {
+        release();
+      }
+    }
 
     store.updateMessage(msg.id, { status: 'streaming', markers: prep.markers.length ? JSON.stringify(prep.markers) : null });
     this.emitUpdate(msg.id, req.threadId);
@@ -231,7 +273,7 @@ export class TurnRunner {
             flags_hash: hash,
           });
           // A session forked after a move has sent the pending context of the one it came from.
-          if (prep.from) store.clearPending(prep.from.threadId, req.agentName, prep.from.cwd);
+          if (prep.from && 'threadId' in prep.from) store.clearPending(prep.from.threadId, req.agentName, prep.from.cwd);
           store.updateMessage(msg.id, { session_id: e.sessionId });
           break;
         case 'textDelta':
@@ -276,13 +318,7 @@ export class TurnRunner {
       bin,
       args: buildArgs(spawnAgent, prep.args, mode),
       cwd: req.cwd,
-      env: childEnv({
-        AGENT_MODE: conversation.yolo ? 'yolo' : 'readonly',
-        AGENT_TOOLS: JSON.stringify(agent.tools ?? []),
-        AGENT_CHAT_RUN_ID: req.runId ?? msg.id,
-        AGENT_CHAT_GATE_CONFIG: paths.gateJson,
-        AGENT_CHAT_HOOK_LOG: paths.hookLog,
-      }),
+      env,
       prompt: prep.prompt,
       onEvent,
     });
@@ -296,7 +332,7 @@ export class TurnRunner {
     flush();
 
     const res = result as Extract<RunnerEvent, { type: 'result' }> | null;
-    const usage = res?.usage ? { ...res.usage, iterations: undefined, first_call: firstUsage, total_cost_usd: res.costUsd } : null;
+    const usage = res?.usage ? { ...res.usage, iterations: undefined, first_call: firstUsage, total_cost_usd: res.costUsd, reader: readerUsage ?? undefined } : null;
     const usageJson = usage ? JSON.stringify(usage) : null;
 
     if (signal.aborted) return this.finish(msg, 'cancelled', { usage: usageJson }, text);
@@ -312,7 +348,8 @@ export class TurnRunner {
 
     // The transcript behind a stored session is gone (e.g. deleted); start over with a seed once.
     if (allowRetry && !sessionId && prep.from && /No conversation found/i.test(errText)) {
-      store.deleteSession(prep.from.threadId, req.agentName, prep.from.cwd);
+      if ('documentId' in prep.from) store.deleteReaderSession(prep.from.documentId, req.agentName, prep.from.cwd);
+      else store.deleteSession(prep.from.threadId, req.agentName, prep.from.cwd);
       return this.execute(msg, req, signal, false);
     }
 
@@ -324,8 +361,45 @@ export class TurnRunner {
     return this.finish(msg, 'error', { content_md: text, usage: usageJson, error: `${reason}\n${errText}`.trim().slice(0, 4000) }, text);
   }
 
-  /** Session resolution for (thread, agent, cwd): resume, fork from the parent thread, or seed. */
-  private prepare(thread: ThreadRow, conversation: ConversationRow, req: TurnRequest, hashAt: (cwd: string) => string): Prepared {
+  /**
+   * A document's reader turn: a new session reads the document (after what the parent session knows)
+   * and only acknowledges it. Saves it as the reader for (document, agent, cwd) and returns the turn's
+   * usage, or null if it failed; the thread then carries the document in its own prompt.
+   */
+  private async readDocument(
+    messageId: string,
+    prime: NonNullable<Prepared['prime']>,
+    run: { bin: string; args: string[]; cwd: string; env: NodeJS.ProcessEnv; hash: string; agent: string },
+  ): Promise<object | null> {
+    let sessionId: string | null = null;
+    let result: Extract<RunnerEvent, { type: 'result' }> | null = null;
+    const proc = spawnClaude({
+      bin: run.bin,
+      args: run.args,
+      cwd: run.cwd,
+      env: run.env,
+      prompt: prime.prompt,
+      onEvent: (e) => {
+        if (e.type === 'init') sessionId = e.sessionId;
+        else if (e.type === 'result') result = e;
+      },
+    });
+    const entry = this.active.get(messageId);
+    if (entry) entry.proc = proc;
+    if (entry?.abort.signal.aborted) proc.cancel();
+    const exit = await proc.done;
+    if (entry) entry.proc = undefined;
+    const res = result as Extract<RunnerEvent, { type: 'result' }> | null;
+    if (!sessionId || !res || res.isError || exit.code !== 0) return null;
+    this.ctx.store.saveReaderSession({ message_id: prime.document.id, agent_id: run.agent, cwd: run.cwd, claude_session_id: sessionId, flags_hash: run.hash });
+    return res.usage ? { ...res.usage, iterations: undefined, total_cost_usd: res.costUsd } : {};
+  }
+
+  /**
+   * Session resolution for (thread, agent, cwd): resume, fork from the parent thread or a document's
+   * reader, or seed. With `prime` off, a missing reader is not made (the document goes in the prompt).
+   */
+  private prepare(thread: ThreadRow, conversation: ConversationRow, req: TurnRequest, hashAt: (cwd: string) => string, prime = true): Prepared {
     const { store } = this.ctx;
     const hash = hashAt(req.cwd);
     const markers: string[] = [];
@@ -378,26 +452,53 @@ export class TurnRunner {
     const threadContext = isParagraph ? renderThreadContext(thread, source) : '';
     const priorInThread = threadMsgs.filter((m) => !exclude.includes(m.id));
 
-    // 3. Paragraph thread whose parent thread has a session for this agent: fork it.
-    if (isParagraph) {
-      const parent = store.getSession(originId!, req.agentName, req.cwd);
-      if (parent && parent.flags_hash === hash) {
-        const parentMsgs = store.doneMessages(originId!, { uptoId: thread.parent_message_id! });
-        const parentDelta = selectDelta(parentMsgs, req.agentName, parent.last_seen_seq);
-        const sideSoFar = selectDelta(priorInThread, req.agentName, 0);
-        markers.push(thread.origin_thread_id ? 'session forked from the conversation this channel grew out of' : 'thread session forked from the main conversation');
+    // A passage of a shared document: the agent answers from the whole document. Every path below puts
+    // it ahead of the passage, once: in the forked session's history, in the delta, or first in the seed.
+    const doc = documentMeta(source);
+    const parent = isParagraph ? store.getSession(originId!, req.agentName, req.cwd) : undefined;
+    const parentOk = !!parent && parent.flags_hash === hash;
+    const sideSoFar = selectDelta(priorInThread, req.agentName, 0);
+
+    // 3. A long document the parent session has not read: fork the document's reader session, which
+    //    has, so the document is a cache read. The first thread per agent makes the reader.
+    if (doc && source!.content_md.length >= READER_MIN_CHARS && !(parentOk && parent!.last_seen_seq >= (source!.done_seq ?? Infinity))) {
+      const reader = store.getReaderSession(source!.id, req.agentName, req.cwd);
+      if (reader && reader.flags_hash === hash) {
+        markers.push(`${doc.name} already read, session forked`);
         return {
           kind: 'fork',
-          args: { resume: parent.claude_session_id, fork: true },
-          prompt: join(renderUpdate(parentDelta), threadContext, renderUpdate(sideSoFar, 'side_thread_so_far'), message),
+          args: { resume: reader.claude_session_id, fork: true },
+          prompt: join(threadContext, renderUpdate(sideSoFar, 'side_thread_so_far'), message),
           cursor: maxSeq(priorInThread, triggerSeq),
           markers,
-          from: { threadId: originId!, cwd: req.cwd },
+          from: { documentId: source!.id, cwd: req.cwd },
         };
+      }
+      if (prime) {
+        // The reader knows what the parent session would: forked from it, or seeded up to the document.
+        const upto = store.doneMessages(originId!, { uptoId: source!.id });
+        const before = parentOk ? renderUpdate(selectDelta(upto, req.agentName, parent!.last_seen_seq)) : renderSeed(upto, req.agentName).text;
+        const args: SessionArgs = parentOk ? { resume: parent!.claude_session_id, fork: true } : {};
+        return { kind: 'seed', args: {}, prompt: '', cursor: 0, markers, prime: { document: source!, meta: doc, args, prompt: join(before, renderReaderNote(doc)) } };
       }
     }
 
-    // 4. New session seeded with a transcript.
+    // 4. Paragraph thread whose parent thread has a session for this agent: fork it.
+    if (isParagraph && parentOk) {
+      const parentMsgs = store.doneMessages(originId!, { uptoId: thread.parent_message_id! });
+      const parentDelta = selectDelta(parentMsgs, req.agentName, parent!.last_seen_seq);
+      markers.push(thread.origin_thread_id ? 'session forked from the conversation this channel grew out of' : 'thread session forked from the main conversation');
+      return {
+        kind: 'fork',
+        args: { resume: parent!.claude_session_id, fork: true },
+        prompt: join(renderUpdate(parentDelta), threadContext, renderUpdate(sideSoFar, 'side_thread_so_far'), message),
+        cursor: maxSeq(priorInThread, triggerSeq),
+        markers,
+        from: { threadId: originId!, cwd: req.cwd },
+      };
+    }
+
+    // 5. New session seeded with a transcript (shared documents lead it, in full).
     let history: MessageRow[] = [];
     if (isParagraph) history = store.doneMessages(originId!, { uptoId: thread.parent_message_id! });
     history = history.concat(priorInThread);
@@ -438,9 +539,11 @@ export function renderThreadContext(thread: ThreadRow, source: MessageRow | unde
     .join('\n');
   const n = thread.block_index != null && thread.block_end != null ? thread.block_end - thread.block_index + 1 : 1;
   const passage = n > 1 ? 'these passages' : 'this passage';
-  const opened = thread.origin_thread_id
-    ? `This channel grew out of a side thread the user opened on ${n > 1 ? `these ${n} consecutive passages` : passage}`
-    : `The user opened a side thread on ${n > 1 ? `these ${n} consecutive passages` : passage}`;
+  const what = n > 1 ? `these ${n} consecutive passages` : passage;
+  const opened = thread.origin_thread_id ? `This channel grew out of a side thread the user opened on ${what}` : `The user opened a side thread on ${what}`;
+  const doc = documentMeta(source);
+  if (doc)
+    return `<thread_context>\n${opened} of the document "${doc.name}" they shared earlier (its full text is above in this conversation):\n${quoted}\nAnswer with the whole document in mind, not only ${passage}. The main discussion continues separately.\n</thread_context>`;
   return `<thread_context>\n${opened} from an earlier message by ${author}:\n${quoted}\nFocus on ${passage}. The main discussion continues separately.\n</thread_context>`;
 }
 

@@ -66,6 +66,16 @@ export interface SessionRow {
   pending: string | null;
 }
 
+/** A document's reader session (see 006-document-sessions.sql). */
+export interface ReaderSessionRow {
+  message_id: string;
+  agent_id: string;
+  cwd: string;
+  claude_session_id: string;
+  flags_hash: string;
+  created_at: number;
+}
+
 export interface RunRow {
   id: string;
   kind: 'turn' | 'workflow' | 'routine';
@@ -409,6 +419,27 @@ export class Store {
 
   deleteThreadSessions(threadId: string): void {
     this.db.prepare(`DELETE FROM agent_sessions WHERE thread_id = ?`).run(threadId);
+  }
+
+  getReaderSession(messageId: string, agentId: string, cwd: string): ReaderSessionRow | undefined {
+    return this.db
+      .prepare(`SELECT * FROM document_sessions WHERE message_id = ? AND agent_id = ? AND cwd = ?`)
+      .get(messageId, agentId, cwd) as ReaderSessionRow | undefined;
+  }
+
+  saveReaderSession(s: Omit<ReaderSessionRow, 'created_at'>): void {
+    this.db
+      .prepare(
+        `INSERT INTO document_sessions (message_id, agent_id, cwd, claude_session_id, flags_hash, created_at)
+         VALUES (@message_id, @agent_id, @cwd, @claude_session_id, @flags_hash, @created_at)
+         ON CONFLICT (message_id, agent_id, cwd) DO UPDATE SET
+           claude_session_id = excluded.claude_session_id, flags_hash = excluded.flags_hash, created_at = excluded.created_at`,
+      )
+      .run({ ...s, created_at: Date.now() });
+  }
+
+  deleteReaderSession(messageId: string, agentId: string, cwd: string): void {
+    this.db.prepare(`DELETE FROM document_sessions WHERE message_id = ? AND agent_id = ? AND cwd = ?`).run(messageId, agentId, cwd);
   }
 
   // ---- runs ----
