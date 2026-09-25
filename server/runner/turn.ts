@@ -18,6 +18,8 @@ export interface TurnTrigger {
   text: string;
   /** "you", "workflow:<name>", "routine:<name>". */
   from: string;
+  /** Directories the message references (#dir chips); the turn still runs in its own cwd. */
+  dirs?: string[];
 }
 
 export interface TurnRequest {
@@ -42,8 +44,15 @@ interface Prepared {
   cursor: number;
   markers: string[];
   kind: 'resume' | 'fork' | 'seed';
+  /** The stored session this turn resumes or forks, dropped if its transcript is gone. */
+  from?: { threadId: string; cwd: string };
 }
 
+/**
+ * The tool_events column holds the turn's steps: tool calls and thinking. `at` is the length of the
+ * message text when the step began, so the chat can show each step where it happened; `seq` orders
+ * steps that began at the same length.
+ */
 interface ToolEvent {
   id: string;
   name: string;
@@ -51,6 +60,16 @@ interface ToolEvent {
   output_preview?: string;
   denied?: boolean;
   is_error?: boolean;
+  at: number;
+  seq: number;
+}
+
+interface ThinkingEvent {
+  kind: 'thinking';
+  id: string;
+  text: string;
+  at: number;
+  seq: number;
 }
 
 const FLUSH_MS = 500;
@@ -174,8 +193,9 @@ export class TurnRunner {
       : { model: agent.model ?? cfg.config.defaultModel, systemPrompt: agent.body, render: agent.render };
     const mode: SpawnMode = { settingsPath: paths.gateSettings, partial: true };
     const bin = cfg.config.claudeBin;
-    const hash = flagsHash(bin, spawnAgent, mode, req.cwd);
-    const prep = this.prepare(thread, conversation, req, hash);
+    const hashAt = (cwd: string) => flagsHash(bin, spawnAgent, mode, cwd);
+    const hash = hashAt(req.cwd);
+    const prep = this.prepare(thread, conversation, req, hashAt);
 
     store.updateMessage(msg.id, { status: 'streaming', markers: prep.markers.length ? JSON.stringify(prep.markers) : null });
     this.emitUpdate(msg.id, req.threadId);
@@ -187,11 +207,13 @@ export class TurnRunner {
     let firstUsage: unknown = null;
     let result: Extract<RunnerEvent, { type: 'result' }> | null = null;
     const tools: ToolEvent[] = [];
+    const thinking: ThinkingEvent[] = [];
+    let steps = 0;
 
     const flush = () => {
       if (!dirty) return;
       dirty = false;
-      store.updateMessage(msg.id, { content_md: text, tool_events: JSON.stringify(tools) });
+      store.updateMessage(msg.id, { content_md: text, tool_events: JSON.stringify([...tools, ...thinking]) });
     };
     const timer = setInterval(flush, FLUSH_MS);
 
@@ -215,8 +237,16 @@ export class TurnRunner {
           dirty = true;
           this.ctx.hub.thread(req.threadId, 'message.delta', { id: msg.id, text: e.text });
           break;
+        case 'thinkingDelta': {
+          let t = thinking.find((x) => x.id === e.block);
+          if (!t) thinking.push((t = { kind: 'thinking', id: e.block, text: '', at: text.length, seq: steps++ }));
+          t.text += e.text;
+          dirty = true;
+          this.ctx.hub.thread(req.threadId, 'message.thinking', { id: msg.id, thinkingId: t.id, at: t.at, seq: t.seq, text: e.text });
+          break;
+        }
         case 'toolUse':
-          tools.push({ id: e.id, name: e.name, input: e.input });
+          tools.push({ id: e.id, name: e.name, input: e.input, at: text.length, seq: steps++ });
           dirty = true;
           this.ctx.hub.thread(req.threadId, 'message.tool', { id: msg.id, toolEvents: tools });
           break;
@@ -279,9 +309,8 @@ export class TurnRunner {
       .join('\n');
 
     // The transcript behind a stored session is gone (e.g. deleted); start over with a seed once.
-    if (allowRetry && !sessionId && prep.kind !== 'seed' && /No conversation found/i.test(errText)) {
-      if (prep.kind === 'resume') store.deleteSession(req.threadId, req.agentName, req.cwd);
-      else store.deleteSession(thread.parent_thread_id!, req.agentName, req.cwd);
+    if (allowRetry && !sessionId && prep.from && /No conversation found/i.test(errText)) {
+      store.deleteSession(prep.from.threadId, req.agentName, prep.from.cwd);
       return this.execute(msg, req, signal, false);
     }
 
@@ -294,12 +323,13 @@ export class TurnRunner {
   }
 
   /** Session resolution for (thread, agent, cwd): resume, fork from the parent thread, or seed. */
-  private prepare(thread: ThreadRow, conversation: ConversationRow, req: TurnRequest, hash: string): Prepared {
+  private prepare(thread: ThreadRow, conversation: ConversationRow, req: TurnRequest, hashAt: (cwd: string) => string): Prepared {
     const { store } = this.ctx;
+    const hash = hashAt(req.cwd);
     const markers: string[] = [];
     const threadMsgs = store.doneMessages(thread.id);
     const exclude = req.trigger.messageId ? [req.trigger.messageId] : [];
-    const message = renderMessage(req.trigger.from, req.trigger.text);
+    const message = join(renderDirRefs(req.trigger.dirs, req.cwd), renderMessage(req.trigger.from, req.trigger.text));
     const triggerSeq = req.trigger.seq ?? 0;
 
     let session: SessionRow | undefined = store.getSession(thread.id, req.agentName, req.cwd);
@@ -317,35 +347,55 @@ export class TurnRunner {
         prompt: join(renderUpdate(delta), message),
         cursor: maxSeq(delta, Math.max(triggerSeq, session.last_seen_seq)),
         markers,
+        from: { threadId: thread.id, cwd: req.cwd },
       };
     }
 
-    const isParagraph = !!thread.parent_thread_id;
+    // 2. The thread moved: fork the agent's session from the previous directory, so it keeps its context.
+    const before = store.latestSessionElsewhere(thread.id, req.agentName, req.cwd);
+    if (before && before.flags_hash === hashAt(before.cwd)) {
+      const delta = selectDelta(threadMsgs, req.agentName, before.last_seen_seq, exclude);
+      markers.push(`moved to ${path.basename(req.cwd)}, session carried over`);
+      return {
+        kind: 'fork',
+        args: { resume: before.claude_session_id, fork: true },
+        prompt: join(renderUpdate(delta), renderMove(before.cwd, req.cwd), message),
+        cursor: maxSeq(delta, Math.max(triggerSeq, before.last_seen_seq)),
+        markers,
+        from: { threadId: thread.id, cwd: before.cwd },
+      };
+    }
+
+    // A channel made from a side thread still starts from its passage: an agent new to it forks or reads
+    // the discussion the passage came from, like in the side thread.
+    const originId = thread.parent_thread_id ?? thread.origin_thread_id;
+    const isParagraph = !!originId && !!thread.parent_message_id;
     const source = isParagraph ? store.getMessage(thread.parent_message_id!) : undefined;
     const threadContext = isParagraph ? renderThreadContext(thread, source) : '';
     const priorInThread = threadMsgs.filter((m) => !exclude.includes(m.id));
 
-    // 2. Paragraph thread whose parent thread has a session for this agent: fork it.
+    // 3. Paragraph thread whose parent thread has a session for this agent: fork it.
     if (isParagraph) {
-      const parent = store.getSession(thread.parent_thread_id!, req.agentName, req.cwd);
+      const parent = store.getSession(originId!, req.agentName, req.cwd);
       if (parent && parent.flags_hash === hash) {
-        const parentMsgs = store.doneMessages(thread.parent_thread_id!, { uptoId: thread.parent_message_id! });
+        const parentMsgs = store.doneMessages(originId!, { uptoId: thread.parent_message_id! });
         const parentDelta = selectDelta(parentMsgs, req.agentName, parent.last_seen_seq);
         const sideSoFar = selectDelta(priorInThread, req.agentName, 0);
-        markers.push('thread session forked from the main conversation');
+        markers.push(thread.origin_thread_id ? 'session forked from the conversation this channel grew out of' : 'thread session forked from the main conversation');
         return {
           kind: 'fork',
           args: { resume: parent.claude_session_id, fork: true },
           prompt: join(renderUpdate(parentDelta), threadContext, renderUpdate(sideSoFar, 'side_thread_so_far'), message),
           cursor: maxSeq(priorInThread, triggerSeq),
           markers,
+          from: { threadId: originId!, cwd: req.cwd },
         };
       }
     }
 
-    // 3. New session seeded with a transcript.
+    // 4. New session seeded with a transcript.
     let history: MessageRow[] = [];
-    if (isParagraph) history = store.doneMessages(thread.parent_thread_id!, { uptoId: thread.parent_message_id! });
+    if (isParagraph) history = store.doneMessages(originId!, { uptoId: thread.parent_message_id! });
     history = history.concat(priorInThread);
     if (conversation.kind === 'routine' && !isParagraph) history = sinceLatestRunHeader(history, threadMsgs);
     const seed = renderSeed(history, req.agentName);
@@ -365,6 +415,16 @@ function join(...parts: string[]): string {
   return parts.filter((p) => p && p.trim()).join('\n\n');
 }
 
+/** Directories tagged for reference: named in the prompt only, so the spawn flags (and the cache) stay the same. */
+export function renderDirRefs(dirs: string[] | undefined, cwd: string): string {
+  if (!dirs?.length) return '';
+  return `<referenced_directories>\nThe user points you at these directories. Your working directory is still ${cwd}; read them by absolute path.\n${dirs.map((d) => `- ${d}`).join('\n')}\n</referenced_directories>`;
+}
+
+export function renderMove(from: string, to: string): string {
+  return `<working_directory_changed>\nThe user moved this conversation from ${from} to ${to}. You now run in ${to}; relative paths refer to it.\n</working_directory_changed>`;
+}
+
 export function renderThreadContext(thread: ThreadRow, source: MessageRow | undefined): string {
   const author = source ? (source.author_kind === 'agent' ? `agent:${source.author_id}` : source.author_kind === 'user' ? 'you' : 'the app') : 'unknown';
   const quoted = (thread.block_text ?? '')
@@ -372,7 +432,12 @@ export function renderThreadContext(thread: ThreadRow, source: MessageRow | unde
     .split('\n')
     .map((l) => `> ${l}`)
     .join('\n');
-  return `<thread_context>\nThe user opened a side thread on this passage from an earlier message by ${author}:\n${quoted}\nFocus on this passage. The main discussion continues separately.\n</thread_context>`;
+  const n = thread.block_index != null && thread.block_end != null ? thread.block_end - thread.block_index + 1 : 1;
+  const passage = n > 1 ? 'these passages' : 'this passage';
+  const opened = thread.origin_thread_id
+    ? `This channel grew out of a side thread the user opened on ${n > 1 ? `these ${n} consecutive passages` : passage}`
+    : `The user opened a side thread on ${n > 1 ? `these ${n} consecutive passages` : passage}`;
+  return `<thread_context>\n${opened} from an earlier message by ${author}:\n${quoted}\nFocus on ${passage}. The main discussion continues separately.\n</thread_context>`;
 }
 
 /** Routine channels: a new session only sees messages after the latest run header. */

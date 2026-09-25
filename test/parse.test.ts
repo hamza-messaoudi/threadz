@@ -37,6 +37,26 @@ describe('stream parser', () => {
     expect(ev.filter((e) => e.type === 'textDelta').map((e: any) => e.text).join('')).toBe('two');
   });
 
+  it('surfaces thinking summaries, streamed or whole, one block each', () => {
+    const events: RunnerEvent[] = [];
+    const p = new StreamParser((e) => events.push(e));
+    const line = (o: unknown) => p.feed(JSON.stringify(o) + '\n');
+    const delta = (index: number, delta: unknown) => line({ type: 'stream_event', event: { type: 'content_block_delta', index, delta } });
+    line({ type: 'stream_event', event: { type: 'message_start', message: { id: 'm1' } } });
+    delta(0, { type: 'thinking_delta', thinking: '' });
+    delta(0, { type: 'thinking_delta', thinking: '391 is ' });
+    delta(0, { type: 'thinking_delta', thinking: '17 × 23.' });
+    delta(1, { type: 'text_delta', text: 'Not prime.' });
+    line({ type: 'assistant', message: { id: 'm1', content: [{ type: 'thinking', thinking: '391 is 17 × 23.' }] } });
+    // A run without partial messages: the thinking arrives whole.
+    line({ type: 'assistant', message: { id: 'm2', content: [{ type: 'thinking', thinking: 'Plan the reply.' }] } });
+    line({ type: 'assistant', message: { id: 'm2', content: [{ type: 'thinking', thinking: '' }] } });
+    const thinking = events.filter((e) => e.type === 'thinkingDelta') as Extract<RunnerEvent, { type: 'thinkingDelta' }>[];
+    expect(thinking.map((e) => e.text)).toEqual(['391 is ', '17 × 23.', 'Plan the reply.']);
+    expect(thinking[0].block).toBe(thinking[1].block);
+    expect(thinking[2].block).not.toBe(thinking[0].block);
+  });
+
   it('marks hook-denied tool results', () => {
     const ev = parseFixture('hook-deny');
     const results = ev.filter((e) => e.type === 'toolResult') as any[];

@@ -45,6 +45,8 @@ export function buildArgs(agent: SpawnAgent, session: SessionArgs, mode: SpawnMo
   const system = systemPromptOf(agent);
   if (system) args.push('--append-system-prompt', system);
   args.push('--settings', mode.settingsPath, '--permission-mode', 'bypassPermissions');
+  // Summaries instead of empty thinking blocks, for the Thinking rows in the chat.
+  if (mode.partial) args.push(...THINKING_DISPLAY);
   if (session.resume) {
     args.push('--resume', session.resume);
     if (session.fork) args.push('--fork-session');
@@ -52,11 +54,19 @@ export function buildArgs(agent: SpawnAgent, session: SessionArgs, mode: SpawnMo
   return args;
 }
 
-/** Hash of everything that must stay identical for a session to keep its cache. */
+const THINKING_DISPLAY = ['--thinking-display', 'summarized'];
+
+/**
+ * Hash of everything that must stay identical for a session to keep its cache. The thinking display
+ * only changes what comes back, not the prompt, so it is left out: adding it kept existing sessions.
+ */
 export function flagsHash(claudeBin: string, agent: SpawnAgent, mode: SpawnMode, cwd: string): string {
+  const args = buildArgs(agent, {}, mode);
+  const at = args.indexOf(THINKING_DISPLAY[0]);
+  if (at >= 0) args.splice(at, THINKING_DISPLAY.length);
   return crypto
     .createHash('sha256')
-    .update(JSON.stringify([claudeBin, buildArgs(agent, {}, mode), cwd]))
+    .update(JSON.stringify([claudeBin, args, cwd]))
     .digest('hex')
     .slice(0, 16);
 }

@@ -10,13 +10,16 @@ const parse = (s: string | null) => {
 };
 
 export function serializeMessage(m: MessageRow) {
+  // Thinking shares the tool_events column with tool calls (see TurnRunner).
+  const steps: any[] = parse(m.tool_events) ?? [];
   return {
     id: m.id,
     threadId: m.thread_id,
     authorKind: m.author_kind,
     authorId: m.author_id,
     content: m.content_md,
-    toolEvents: parse(m.tool_events) ?? [],
+    toolEvents: steps.filter((s) => s.kind !== 'thinking'),
+    thinking: steps.filter((s) => s.kind === 'thinking'),
     status: m.status,
     error: m.error,
     usage: parse(m.usage),

@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { api, type Conversation, type Mention, type Message } from '../lib/api.ts';
+import { api, type Conversation, type Mention, type Message, type ThreadData } from '../lib/api.ts';
 import { tildify } from '../lib/dirs.ts';
 import { navigate, type Route } from '../lib/router.ts';
 import { useAppData } from '../lib/store.tsx';
+import { usePresence } from '../lib/usePresence.ts';
 import { useThread } from '../lib/useThread.ts';
 import { ChannelSettings } from './ChannelSettings.tsx';
+import { MessageMarkdown } from '../markdown/MessageMarkdown.tsx';
 import { Composer } from './Composer.tsx';
-import { MessageList } from './MessageList.tsx';
+import { MessageList, type Passage } from './MessageList.tsx';
 import { ThreadPanel } from './ThreadPanel.tsx';
+import { MessageSkeleton, SkeletonReveal, SwapText, TextsReveal } from './transitions.tsx';
 
 interface Props {
   conversationId: string;
@@ -47,13 +50,13 @@ function NewChat() {
           <h2>New chat</h2>
         </header>
         <div className="messages-scroll">
-          <div className="empty-state">
-            <h3>Start a chat</h3>
-            <p className="muted">
-              Tag an agent with <strong>@</strong> or a workflow. Chats run in the scratch folder unless you tag a folder with <strong>#</strong>; type a
-              new name after # to create a fresh project folder{config?.dirRoots[0] ? ` in ${tildify(config.dirRoots[0], config.homeDir)}` : ''}.
+          <TextsReveal className="empty-state">
+            <h3 className="t-stagger-line t-stagger-line--1">Start a chat</h3>
+            <p className="muted t-stagger-line t-stagger-line--2">
+              Tag an agent with <strong>@</strong> or a workflow. Chats run in the scratch folder. Tag a folder with <strong>#</strong> to let the agent
+              read it, or pick it with <strong>⇧↵</strong> to move the chat into it. Type a new name after # to create a fresh project folder{config?.dirRoots[0] ? ` in ${tildify(config.dirRoots[0], config.homeDir)}` : ''}.
             </p>
-          </div>
+          </TextsReveal>
         </div>
         <Composer draftKey="new-chat" conversation={null} defaultAgent={null} placeholder="Message a new chat…" onSend={send} autoFocus />
       </div>
@@ -64,11 +67,12 @@ function NewChat() {
 function Loaded({ conversation, route }: { conversation: Conversation; route: Route }) {
   const t = useThread(conversation.rootThreadId);
   const [settings, setSettings] = useState(false);
-  const [activeSource, setActiveSource] = useState<{ messageId: string; blockIndex: number } | null>(null);
-  const [floating, setFloating] = useState<{ x: number; y: number; messageId: string; blockIndex: number } | null>(null);
+  const [activeSource, setActiveSource] = useState<Passage | null>(null);
+  // Blocks picked for a new thread (by dragging or shift-clicking 💬), shown with a "Thread" button at x, y.
+  const [pending, setPending] = useState<(Passage & { anchor: number; x: number; y: number }) | null>(null);
   const messagesRef = useRef(t.messages);
   messagesRef.current = t.messages;
-  const { routines } = useAppData();
+  const { routines, config } = useAppData();
   const routine = conversation.routineId ? routines.find((r) => r.name === conversation.routineId) : undefined;
 
   const send = useCallback(
@@ -78,32 +82,89 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
     [conversation.rootThreadId],
   );
 
+  // Opening the passage whose thread is already open closes the panel instead: one click opens, the next closes.
+  const openThreadId = useRef(route.threadId);
+  openThreadId.current = route.threadId;
   const openThread = useCallback(
-    async (m: Message, blockIndex: number) => {
-      const th = await api.post<{ id: string }>('/api/threads', { message_id: m.id, block_index: blockIndex });
-      navigate({ view: 'conversation', conversationId: conversation.id, threadId: th.id });
+    async (m: Message, start: number, end = start) => {
+      setPending(null);
+      const th = await api.post<{ id: string; conversationId: string }>('/api/threads', { message_id: m.id, block_index: start, block_end: end });
+      // The passage's thread has become its own channel.
+      if (th.conversationId !== conversation.id) navigate({ view: 'conversation', conversationId: th.conversationId });
+      else if (th.id === openThreadId.current) navigate({ view: 'conversation', conversationId: conversation.id });
+      else navigate({ view: 'conversation', conversationId: conversation.id, threadId: th.id });
     },
     [conversation.id],
   );
 
-  // Selecting text snaps to its paragraph (the block holding the selection start) and offers "Thread".
+  const threadable = (id: string | undefined) => {
+    const m = messagesRef.current.find((x) => x.id === id);
+    return m && m.status === 'done' && m.authorKind !== 'system' ? m : undefined;
+  };
+
+  // A text selection snaps to whole blocks: every block it touches in the message where it starts.
   const onMouseUp = useCallback(() => {
     setTimeout(() => {
       const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || !sel.rangeCount) return setFloating(null);
+      if (!sel || sel.isCollapsed || !sel.rangeCount) return; // a plain click; mousedown already cleared
       const range = sel.getRangeAt(0);
-      const start = range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : (range.startContainer as HTMLElement);
-      let block = start?.closest<HTMLElement>('[data-block]');
-      const msgEl = (block ?? start)?.closest<HTMLElement>('[data-message-id]');
-      if (!msgEl || msgEl.closest('.thread-panel')) return setFloating(null);
-      if (!block) block = msgEl.querySelector<HTMLElement>('[data-block]'); // selection began above the first block
-      const m = messagesRef.current.find((x) => x.id === msgEl.dataset.messageId);
-      if (!block || !m || m.status !== 'done' || m.authorKind === 'system') return setFloating(null);
+      const elOf = (n: globalThis.Node) => (n.nodeType === Node.TEXT_NODE ? n.parentElement : (n as HTMLElement));
+      const startEl = elOf(range.startContainer);
+      const msgEl = startEl?.closest<HTMLElement>('[data-message-id]');
+      if (!msgEl || msgEl.closest('.thread-panel')) return setPending(null);
+      const blocks = Array.from(msgEl.querySelectorAll<HTMLElement>('[data-block]'));
+      const m = threadable(msgEl.dataset.messageId);
+      if (!blocks.length || !m) return setPending(null);
+      const inMsg = (el: HTMLElement | null | undefined) => (el && msgEl.contains(el) ? el.closest<HTMLElement>('[data-block]') : null);
+      let first = inMsg(startEl) ?? blocks[0]; // selection began above the first block
+      let last = inMsg(elOf(range.endContainer)) ?? blocks[blocks.length - 1]; // or ended past this message
+      // Dragging to the very start of the next paragraph (or from the very end of one) selects no text there.
+      const touches = (b: HTMLElement) => {
+        const r = document.createRange();
+        r.selectNodeContents(b);
+        if (b.contains(range.startContainer)) r.setStart(range.startContainer, range.startOffset);
+        if (b.contains(range.endContainer)) r.setEnd(range.endContainer, range.endOffset);
+        return r.toString().trim() !== '';
+      };
+      let a = blocks.indexOf(first);
+      let z = blocks.indexOf(last);
+      if (z > a && !touches(last)) z--;
+      if (a < z && !touches(first)) a++;
+      first = blocks[a];
+      last = blocks[z];
       const rect = range.getBoundingClientRect();
-      setFloating({ x: Math.min(rect.right, window.innerWidth - 90), y: Math.max(rect.top - 34, 8), messageId: m.id, blockIndex: Number(block.dataset.block) });
+      const start = Number(first.dataset.block);
+      setPending({ messageId: m.id, start, end: Number(last.dataset.block), anchor: start, x: Math.min(rect.right, window.innerWidth - 190), y: Math.max(rect.top - 34, 8) });
     }, 0);
   }, []);
 
+  // Shift-click 💬: the first one anchors the passage, each next one moves its other end.
+  const extendPassage = useCallback(
+    (m: Message, index: number, at: DOMRect) => {
+      window.getSelection()?.removeAllRanges();
+      setPending((p) => {
+        const anchor = p?.messageId === m.id ? p.anchor : activeSource?.messageId === m.id ? activeSource.start : index;
+        return { messageId: m.id, anchor, start: Math.min(anchor, index), end: Math.max(anchor, index), x: at.left, y: Math.max(at.top - 32, 8) };
+      });
+    },
+    [activeSource],
+  );
+
+  useEffect(() => {
+    if (!pending) return;
+    // Capture phase, so Esc drops the pending passage before the thread panel sees it.
+    const on = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.preventDefault();
+      setPending(null);
+      window.getSelection()?.removeAllRanges();
+    };
+    window.addEventListener('keydown', on, true);
+    return () => window.removeEventListener('keydown', on, true);
+  }, [!!pending]);
+
+  // The thread panel stays mounted while it slides out (transitions.dev panel reveal).
+  const panel = usePresence(route.threadId, '--panel-close-dur', 350);
   const closePanel = useCallback(() => navigate({ view: 'conversation', conversationId: conversation.id }), [conversation.id]);
   return (
     <div className={`conversation ${conversation.yolo ? 'yolo' : ''}`}>
@@ -114,72 +175,87 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
             {conversation.name}
           </h2>
           {conversation.yolo && <span className="yolo-label">YOLO</span>}
-          {conversation.dir && (
-            <span className="conv-dir" title={conversation.dir}>
-              {conversation.dir}
-            </span>
+          {t.data?.thread.moved ? (
+            <>
+              <span className="conv-dir moved" title={`This thread was moved to ${t.data.thread.cwd}`}>
+                → {tildify(t.data.thread.cwd, config?.homeDir)}
+              </span>
+              <button className="btn ghost small" onClick={() => api.patch(`/api/threads/${conversation.rootThreadId}`, { dir: null })} data-tooltip={`Run in ${conversation.dir ?? 'the scratch folder'} again`}>
+                Move back
+              </button>
+            </>
+          ) : (
+            conversation.dir && (
+              <span className="conv-dir" title={conversation.dir}>
+                {conversation.dir}
+              </span>
+            )
           )}
           <span className="spacer" />
           {routine && (
             <button className="btn small" onClick={() => api.post(`/api/routines/${encodeURIComponent(routine.name)}/run`)} disabled={routine.status === 'running'}>
-              {routine.status === 'running' ? 'Running…' : 'Run now'}
+              <SwapText text={routine.status === 'running' ? 'Running…' : 'Run now'} />
             </button>
           )}
           <button className="btn ghost" onClick={() => setSettings(true)}>
             Settings
           </button>
         </header>
-        <div className="scroll-host" onMouseUp={onMouseUp} onMouseDown={() => setFloating(null)}>
+        <div className="scroll-host" onMouseUp={onMouseUp} onMouseDown={() => setPending(null)}>
         <ScrollArea messages={t.messages} focusId={route.threadId ? undefined : route.messageId}>
-          {t.loading ? (
-            <div className="empty-state muted">Loading…</div>
-          ) : t.messages.length === 0 ? (
-            <EmptyConversation conversation={conversation} />
-          ) : (
-            <MessageList
-              messages={t.messages}
-              childThreads={t.childThreads}
-              runs={t.runs}
-              onOpenThread={openThread}
-              allowThreads
-              activeSource={route.threadId ? activeSource : null}
-              focusId={route.threadId ? undefined : route.messageId}
-            />
-          )}
+          <SkeletonReveal loaded={!t.loading} skeleton={<MessageSkeleton />}>
+            {!t.loading && t.data?.origin && <OriginCard data={t.data} />}
+            {t.loading ? null : t.messages.length === 0 ? (
+              <EmptyConversation conversation={conversation} />
+            ) : (
+              <MessageList
+                messages={t.messages}
+                childThreads={t.childThreads}
+                runs={t.runs}
+                onOpenThread={openThread}
+                onExtendPassage={extendPassage}
+                allowThreads
+                activeSource={route.threadId ? activeSource : null}
+                pending={pending}
+                focusId={route.threadId ? undefined : route.messageId}
+              />
+            )}
+          </SkeletonReveal>
         </ScrollArea>
         </div>
         <Composer
           draftKey={conversation.rootThreadId}
           conversation={conversation}
           defaultAgent={t.defaultAgent}
+          cwd={t.data?.thread.cwd}
           placeholder={`Message ${conversation.kind === 'chat' ? conversation.name : '#' + conversation.name}`}
           onSend={send}
           autoFocus
         />
       </div>
-      {route.threadId && (
+      {panel.shown && (
         <ThreadPanel
-          key={route.threadId}
-          threadId={route.threadId}
+          key={panel.shown}
+          threadId={panel.shown}
+          phase={panel.phase}
           conversation={conversation}
           focusId={route.messageId}
           onClose={closePanel}
           onSource={setActiveSource}
         />
       )}
-      {floating && (
+      {pending && (
         <button
           className="floating-thread-btn"
-          style={{ left: floating.x, top: floating.y }}
+          style={{ left: pending.x, top: pending.y }}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
-            const m = t.messages.find((x) => x.id === floating.messageId);
-            setFloating(null);
+            const m = t.messages.find((x) => x.id === pending.messageId);
             window.getSelection()?.removeAllRanges();
-            if (m) openThread(m, floating.blockIndex);
+            if (m) openThread(m, pending.start, pending.end);
           }}
         >
-          💬 Thread
+          💬 Thread{pending.end > pending.start && <span className="count"> · {pending.end - pending.start + 1} paragraphs</span>}
         </button>
       )}
       {settings && <ChannelSettings conversation={conversation} onClose={() => setSettings(false)} />}
@@ -187,15 +263,47 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
   );
 }
 
+/** Top of a channel that grew out of a side thread: the passage it started from, linked back to its place. */
+function OriginCard({ data }: { data: ThreadData }) {
+  const { origin, thread, sourceMessage: source } = data;
+  const [open, setOpen] = useState(false);
+  if (!origin || !thread.blockText) return null;
+  const where = origin.conversationKind === 'chat' ? origin.conversationName : `#${origin.conversationName}`;
+  const author = source ? (source.authorKind === 'agent' ? `@${source.authorId}` : source.authorKind === 'user' ? 'you' : 'app') : '';
+  return (
+    <div className={`origin-card quote ${open ? '' : 'collapsed'}`}>
+      <div className="quote-head">
+        <span>
+          Grew out of a thread in{' '}
+          <button
+            className="link"
+            onClick={() => navigate({ view: 'conversation', conversationId: origin.conversationId, messageId: thread.parentMessageId ?? undefined })}
+            data-tooltip="Show the passage where it started"
+          >
+            {where}
+          </button>
+          {author && <span className="muted"> · on a passage by {author}</span>}
+        </span>
+        <button className="link" onClick={() => setOpen(!open)} aria-expanded={open}>
+          <SwapText text={open ? 'Collapse' : 'Expand'} />
+        </button>
+      </div>
+      <div className="quote-clip" style={open ? undefined : { maxHeight: '3.2em' }}>
+        <MessageMarkdown id={`origin:${thread.id}`} content={thread.blockText} className="quote-body" />
+      </div>
+    </div>
+  );
+}
+
 function EmptyConversation({ conversation }: { conversation: Conversation }) {
   return (
-    <div className="empty-state">
-      <h3>{conversation.kind === 'chat' ? 'Empty chat' : `Welcome to #${conversation.name}`}</h3>
-      <p className="muted">
+    <TextsReveal className="empty-state">
+      <h3 className="t-stagger-line t-stagger-line--1">{conversation.kind === 'chat' ? 'Empty chat' : `Welcome to #${conversation.name}`}</h3>
+      <p className="muted t-stagger-line t-stagger-line--2">
         Tag an agent with <strong>@</strong> to start. Tag several to run them in parallel, or tag a workflow to run its steps in order.
-        {conversation.kind === 'channel' && ' Use # to run in another directory.'}
+        {' Tag a folder with # to let the agent read it, or pick it with ⇧↵ to move this conversation into it.'}
       </p>
-    </div>
+    </TextsReveal>
   );
 }
 
@@ -208,7 +316,7 @@ export function ScrollArea({ messages, children, focusId }: { messages: Message[
     pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
   };
   const last = messages[messages.length - 1];
-  const signature = `${messages.length}:${last?.content.length}:${last?.status}:${last?.toolEvents.length}`;
+  const signature = `${messages.length}:${last?.content.length}:${last?.status}:${last?.toolEvents.length}:${last?.thinking?.reduce((n, t) => n + t.text.length, 0)}`;
   useLayoutEffect(() => {
     if (focusId) return;
     const el = ref.current;

@@ -8,6 +8,8 @@ export interface UsageInfo {
 export type RunnerEvent =
   | { type: 'init'; sessionId: string; tools: string[]; model?: string; cwd?: string }
   | { type: 'textDelta'; text: string }
+  /** `block` names the thinking block, so its deltas join up. */
+  | { type: 'thinkingDelta'; block: string; text: string }
   | { type: 'toolUse'; id: string; name: string; input: unknown }
   | { type: 'toolResult'; id: string; preview: string; isError: boolean; denied: boolean }
   | { type: 'firstUsage'; usage: UsageInfo }
@@ -40,11 +42,13 @@ export function isDeniedResult(text: string): boolean {
 
 /**
  * Line-buffered parser for `claude -p --output-format stream-json --verbose [--include-partial-messages]`.
- * Only top-level (non-subagent) text and tool calls are surfaced.
+ * Only top-level (non-subagent) text, thinking and tool calls are surfaced.
  */
 export class StreamParser {
   private buf = '';
   private streamedMessages = new Set<string>();
+  private streamedThinking = new Set<string>();
+  private wholeThinking = 0;
   private currentMessageId: string | null = null;
   private emittedText = false;
   private textStartedFor = new Set<string>();
@@ -141,6 +145,9 @@ export class StreamParser {
     } else if (e.type === 'content_block_delta' && e.delta?.type === 'text_delta' && this.currentMessageId) {
       this.streamedMessages.add(this.currentMessageId);
       this.text(this.currentMessageId, e.delta.text);
+    } else if (e.type === 'content_block_delta' && e.delta?.type === 'thinking_delta' && this.currentMessageId && e.delta.thinking) {
+      this.streamedThinking.add(this.currentMessageId);
+      this.emit({ type: 'thinkingDelta', block: `${this.currentMessageId}:${e.index ?? 0}`, text: e.delta.thinking });
     }
   }
 
@@ -151,6 +158,8 @@ export class StreamParser {
     this.noteUsage(msg.usage);
     for (const block of msg.content ?? []) {
       if (block.type === 'text' && !this.streamedMessages.has(msg.id)) this.text(msg.id, block.text);
+      else if (block.type === 'thinking' && block.thinking && !this.streamedThinking.has(msg.id))
+        this.emit({ type: 'thinkingDelta', block: `${msg.id}:whole${this.wholeThinking++}`, text: block.thinking });
       else if (block.type === 'tool_use') this.emit({ type: 'toolUse', id: block.id, name: block.name, input: block.input });
     }
   }

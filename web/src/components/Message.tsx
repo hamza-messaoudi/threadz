@@ -1,117 +1,299 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, type ChildThread, type Message as Msg, type Run, type ToolEvent } from '../lib/api.ts';
-import { MessageMarkdown } from '../markdown/MessageMarkdown.tsx';
+import { MarkdownBlocks, MessageMarkdown, useParsed } from '../markdown/MessageMarkdown.tsx';
+import type { Block } from '../markdown/blocks.ts';
 import { agentColor, useAppData } from '../lib/store.tsx';
+import { tildify } from '../lib/dirs.ts';
+import { navigate } from '../lib/router.ts';
+import { MatrixLoader, ThinkingLine } from './motion.tsx';
+import { Accordion, AccChevron, PopNumber, SuccessCheck, SwapText } from './transitions.tsx';
+import { orderSteps, prettyTool, StepRow, StepsSummary, toolSummary, useAnchors, type Step } from './Steps.tsx';
 import { WorkflowCard } from './WorkflowCard.tsx';
 
 export interface MessageProps {
   m: Msg;
   childThreads?: ChildThread[];
   run?: Run;
-  activeBlock?: number | null;
-  onOpenThread?: (m: Msg, blockIndex: number) => void;
+  /** The passage whose thread is open (highlighted). */
+  activeRange?: BlockRange | null;
+  /** Blocks picked for a new thread but not yet opened. */
+  pendingRange?: BlockRange | null;
+  onOpenThread?: (m: Msg, start: number, end?: number) => void;
+  /** Shift-click on a block's thread button: grow the pending passage to that block. */
+  onExtendPassage?: (m: Msg, blockIndex: number, at: DOMRect) => void;
   allowThreads?: boolean;
   flash?: boolean;
 }
+
+/** First and last block of a passage, inclusive. */
+export interface BlockRange {
+  start: number;
+  end: number;
+}
+
+const within = (r: BlockRange | null | undefined, i: number) => !!r && r.start <= i && i <= r.end;
 
 const time = (ts: number) => new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
 export const MessageView = memo(function MessageView(props: MessageProps) {
   const { m } = props;
   if (m.authorKind === 'system') return <SystemMessage {...props} />;
-  const isAgent = m.authorKind === 'agent';
-  const name = isAgent ? (m.authorId ?? 'agent') : 'you';
-  const color = isAgent ? agentColor(m.authorId) : undefined;
+  if (m.authorKind === 'user') return <UserMessage {...props} />;
+  const name = m.authorId ?? 'agent';
+  const color = agentColor(m.authorId);
   const live = m.status === 'streaming' || m.status === 'queued';
 
   return (
-    <div className={`msg ${props.flash ? 'flash' : ''}`} id={`m-${m.id}`} data-message-id={m.id}>
-      <div className={`avatar ${isAgent ? '' : 'user'}`} style={color ? { background: color } : undefined}>
-        {name.slice(0, 1).toUpperCase()}
-      </div>
-      <div className="msg-content">
-        {m.markers.map((mk, i) => (
-          <div key={i} className="marker">
-            {mk}
-          </div>
-        ))}
-        <div className="msg-head">
-          <span className="msg-author" style={color ? { color } : undefined}>
-            {isAgent ? `@${name}` : name}
-          </span>
-          <span className="msg-time">{time(m.createdAt)}</span>
-          {isAgent && m.status !== 'done' && <span className={`msg-status ${m.status}`}>{statusLabel(m.status)}</span>}
-          {isAgent && <CacheBadge m={m} />}
-          <span className="msg-actions">
-            {live && (
-              <button className="icon-btn" onClick={() => api.post(`/api/messages/${m.id}/cancel`)} title="Stop this turn">
-                ■ Stop
-              </button>
-            )}
-            {isAgent && m.sessionId && m.cwd && <TerminalButton m={m} />}
-          </span>
+    <div className={`msg agent ${props.flash ? 'flash' : ''}`} id={`m-${m.id}`} data-message-id={m.id}>
+      {m.markers.map((mk, i) => (
+        <div key={i} className="marker">
+          {mk}
         </div>
-        {m.toolEvents.length > 0 && <ToolChips events={m.toolEvents} />}
-        <Body {...props} />
-        {m.status === 'streaming' && !m.content && !m.toolEvents.length && <span className="cursor" />}
-        {m.status === 'queued' && <div className="muted">Waiting for a free slot…</div>}
-        {m.status === 'error' && <ErrorCard m={m} />}
+      ))}
+      <div className="msg-head">
+        <span className="msg-dot" style={{ background: color }} aria-hidden />
+        <span className="msg-author" style={{ color }}>
+          @{name}
+        </span>
+        <span className="msg-time">{time(m.createdAt)}</span>
+        {m.status !== 'done' && (
+          <span className={`msg-status ${m.status}`}>
+            <SwapText text={statusLabel(m.status)} />
+          </span>
+        )}
+        <CacheBadge m={m} />
+        <span className="msg-actions">
+          {live && (
+            <button className="icon-btn" onClick={() => api.post(`/api/messages/${m.id}/cancel`)} data-tooltip="Stop this turn">
+              ■ Stop
+            </button>
+          )}
+          {m.sessionId && m.cwd && <TerminalButton m={m} />}
+        </span>
       </div>
+      <AgentBody {...props} />
+      {live && <AgentStatus m={m} />}
+      {m.status === 'error' && <ErrorCard m={m} />}
     </div>
   );
 });
+
+/** Your messages sit in a frame on the right; the agents' replies are unframed. */
+function UserMessage(props: MessageProps) {
+  const { m } = props;
+  return (
+    <div className={`msg user ${props.flash ? 'flash' : ''}`} id={`m-${m.id}`} data-message-id={m.id}>
+      <div className="user-bubble">
+        <Body {...props} />
+      </div>
+      <div className="msg-meta">{time(m.createdAt)}</div>
+    </div>
+  );
+}
+
+/**
+ * An agent's turn in the order it happened: thinking, text, tool calls, more text. Once the turn is
+ * done, everything before the final answer folds into one "3 tool calls, 2 messages" row.
+ */
+function AgentBody(props: MessageProps) {
+  const { m, childThreads, activeRange, pendingRange } = props;
+  const streaming = m.status === 'streaming';
+  const live = streaming || m.status === 'queued';
+  const parsed = useParsed(m.id, m.content, streaming);
+  const steps = useMemo(() => orderSteps(m), [m.toolEvents, m.thinking]);
+  const { anchors, ready } = useAnchors(m.id, m.content, steps.map((s) => s.at));
+  const renderBlock = useBlockRenderer(props);
+  const [open, setOpen] = useState<boolean | null>(null);
+
+  const lastStep = steps.at(-1);
+  const row = (s: Step) => <StepRow key={s.id} step={s} live={live && (s.kind === 'tool' || (s === lastStep && s.at === m.content.length))} />;
+
+  // The whole reply could not be parsed: the text as written, steps first.
+  if (!parsed && m.content && !streaming)
+    return (
+      <div className="msg-body">
+        {steps.map(row)}
+        <div className="md-body md-unparsed">{m.content}</div>
+      </div>
+    );
+  // Measuring where the steps go takes a parse; a finished reply waits for it rather than jumping.
+  if (!parsed || (!ready && !live)) {
+    if (m.content && !live) return null;
+    return steps.length ? <div className="msg-body">{steps.map(row)}</div> : null;
+  }
+
+  const total = parsed.blocks.length;
+  type Unit = { kind: 'text'; from: number; to: number } | Step;
+  const units: Unit[] = [];
+  let at = 0;
+  for (const s of steps) {
+    const b = Math.min(anchors.get(s.at) ?? total, total);
+    if (b > at) units.push({ kind: 'text', from: at, to: b });
+    at = Math.max(at, b);
+    units.push(s);
+  }
+  if (at < total) units.push({ kind: 'text', from: at, to: total });
+
+  const text = (u: { from: number; to: number }) => (
+    <MarkdownBlocks
+      key={`b${u.from}`}
+      parsed={{ tree: parsed.tree, blocks: parsed.blocks.slice(u.from, u.to) }}
+      total={total}
+      streaming={streaming && u.to === total}
+      renderBlock={renderBlock}
+    />
+  );
+  const unit = (u: Unit) => (u.kind === 'text' ? text(u) : row(u));
+
+  // Fold the steps once the turn has a final answer after its last tool call.
+  const final = units.at(-1);
+  const tools = steps.flatMap((s) => (s.kind === 'tool' ? [s.tool] : []));
+  if (m.status !== 'done' || !tools.length || final?.kind !== 'text') return <div className="msg-body">{units.map(unit)}</div>;
+
+  const before = units.slice(0, -1);
+  const cut = final.from;
+  // A thread or picked passage in the folded text keeps it open.
+  const touched =
+    (childThreads ?? []).some((t) => t.parentMessageId === m.id && t.blockIndex < cut) || (activeRange && activeRange.start < cut) || (pendingRange && pendingRange.start < cut);
+  const isOpen = open ?? !!touched;
+  return (
+    <div className="msg-body">
+      <StepsSummary tools={tools} messages={before.filter((u) => u.kind === 'text').length} open={isOpen} onToggle={() => setOpen(!isOpen)} />
+      <Accordion open={isOpen}>
+        <div className="steps-group">{before.map(unit)}</div>
+      </Accordion>
+      {text(final)}
+    </div>
+  );
+}
+
+/** While a turn is queued or running: a matrix loader and a status line that follows the tool calls. */
+function AgentStatus({ m }: { m: Msg }) {
+  // Whichever grew last, the text or the tool list, says what the agent is doing now.
+  const seen = useRef({ tools: m.toolEvents.length, text: m.content.length, last: 'none' as 'none' | 'tool' | 'text' });
+  if (m.toolEvents.length !== seen.current.tools) seen.current = { ...seen.current, tools: m.toolEvents.length, last: 'tool' };
+  if (m.content.length !== seen.current.text) seen.current = { ...seen.current, text: m.content.length, last: 'text' };
+  const running = [...m.toolEvents].reverse().find((t) => t.output_preview === undefined);
+  const text =
+    m.status === 'queued'
+      ? 'Waiting for a free slot…'
+      : running
+        ? toolActivity(running)
+        : seen.current.last === 'text' || (seen.current.last === 'none' && m.content)
+          ? 'Writing…'
+          : 'Thinking…';
+  return (
+    <div className="agent-status">
+      <MatrixLoader variant={m.status === 'queued' ? 'pulse' : running ? 'orbit' : 'scan'} rounded={m.status === 'queued'} />
+      <ThinkingLine text={text} className="agent-status-line" />
+    </div>
+  );
+}
+
+const VERBS: Record<string, string> = {
+  Read: 'Reading',
+  Edit: 'Editing',
+  MultiEdit: 'Editing',
+  Write: 'Writing',
+  NotebookEdit: 'Editing',
+  Bash: 'Running',
+  Grep: 'Searching for',
+  Glob: 'Finding',
+  WebFetch: 'Fetching',
+  WebSearch: 'Searching the web for',
+  Agent: 'Delegating:',
+  Task: 'Delegating:',
+  TodoWrite: 'Planning',
+  ToolSearch: 'Loading tools',
+};
+
+/** "Reading app/server.ts", "Running npm test", "github · list_prs …" */
+export function toolActivity(t: ToolEvent): string {
+  const verb = VERBS[t.name];
+  let arg = toolSummary(t);
+  if (t.name === 'Read' || t.name === 'Edit' || t.name === 'Write' || t.name === 'MultiEdit') arg = arg.split('/').slice(-2).join('/');
+  if (t.name === 'TodoWrite' || t.name === 'ToolSearch') arg = '';
+  arg = arg.replace(/\s+/g, ' ');
+  if (arg.length > 80) arg = arg.slice(0, 80) + '…';
+  return `${verb ?? prettyTool(t.name)}${arg ? ' ' + arg : ''}${verb ? '' : '…'}`;
+}
 
 function statusLabel(s: Msg['status']) {
   return s === 'streaming' ? 'working' : s;
 }
 
-function Body({ m, childThreads, activeBlock, onOpenThread, allowThreads }: MessageProps) {
-  const byBlock = useMemo(() => {
-    const map = new Map<number, ChildThread>();
-    for (const t of childThreads ?? []) if (t.parentMessageId === m.id) map.set(t.blockIndex, t);
-    return map;
-  }, [childThreads, m.id]);
-  const canThread = allowThreads && m.status === 'done' && !!onOpenThread;
+function Body(props: MessageProps) {
+  const { m } = props;
+  const renderBlock = useBlockRenderer(props);
   if (!m.content) return null;
   return (
     <div className="msg-body">
-      <MessageMarkdown
-        id={m.id}
-        content={m.content}
-        streaming={m.status === 'streaming'}
-        renderBlock={(b, content) => {
-          const t = byBlock.get(b.index);
-          return (
-            <div
-              data-block={b.index}
-              className={`block ${t ? 'has-thread' : ''} ${activeBlock === b.index ? 'active-source' : ''}`}
-              onClick={t && onOpenThread ? (e) => !window.getSelection()?.toString() && !(e.target as HTMLElement).closest('a, button') && onOpenThread(m, b.index) : undefined}
-            >
-              {canThread && (
-                <button
-                  className="block-gutter"
-                  title="Reply in thread"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenThread!(m, b.index);
-                  }}
-                >
-                  💬
-                </button>
-              )}
-              {content}
-              {t && (
-                <div className="thread-badge">
-                  {t.replyCount} {t.replyCount === 1 ? 'reply' : 'replies'}
-                  <span className="muted">· {relTime(t.lastActivity)}</span>
-                </div>
-              )}
-            </div>
-          );
-        }}
-      />
+      <MessageMarkdown id={m.id} content={m.content} streaming={m.status === 'streaming'} renderBlock={renderBlock} />
     </div>
   );
+}
+
+/** Wraps each block with its thread controls: the reply gutter, the rail, the reply badge. */
+function useBlockRenderer({ m, childThreads, activeRange, pendingRange, onOpenThread, onExtendPassage, allowThreads }: MessageProps) {
+  const threads = useMemo(() => (childThreads ?? []).filter((t) => t.parentMessageId === m.id), [childThreads, m.id]);
+  const canThread = allowThreads && m.status === 'done' && !!onOpenThread;
+  return (b: Block, content: ReactNode) => {
+    const i = b.index;
+    const covering = threads.filter((t) => t.blockIndex <= i && i <= t.blockEnd);
+    // A block inside a multi-paragraph passage joins the rail of the block above it; a pending pick draws over threads.
+    const join = within(pendingRange, i) && pendingRange!.start < i ? 'pending-join' : covering.some((t) => t.blockIndex < i) ? 'rail-join' : '';
+    // Clicking a quoted block opens the tightest passage around it.
+    const tightest = covering.reduce<ChildThread | undefined>((a, t) => (!a || t.blockEnd - t.blockIndex < a.blockEnd - a.blockIndex ? t : a), undefined);
+    const ending = covering.filter((t) => t.blockEnd === i);
+    const cls = ['block', covering.length && 'has-thread', within(activeRange, i) && 'active-source', within(pendingRange, i) && 'pending-passage', join];
+    return (
+      <div
+        data-block={i}
+        className={cls.filter(Boolean).join(' ')}
+        onClick={tightest && onOpenThread ? (e) => !window.getSelection()?.toString() && !(e.target as HTMLElement).closest('a, button') && onOpenThread(m, tightest.blockIndex, tightest.blockEnd) : undefined}
+      >
+        {canThread && (
+          <button
+            className="block-gutter"
+            data-tooltip="Reply in thread · ⇧-click another to span paragraphs"
+            aria-label="Reply in thread"
+            onMouseDown={(e) => {
+              // Shift would extend the browser's text selection, and the list would clear the pending passage.
+              if (e.shiftKey) {
+                e.preventDefault();
+                e.stopPropagation();
+              }
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (e.shiftKey && onExtendPassage) onExtendPassage(m, i, e.currentTarget.getBoundingClientRect());
+              else onOpenThread!(m, i);
+            }}
+          >
+            💬
+          </button>
+        )}
+        {content}
+        {ending.map((t) => (
+          <button
+            key={t.id}
+            className={`thread-badge ${t.channel ? 'to-channel' : ''}`}
+            data-tooltip={t.channel ? `This thread became #${t.channel.name}` : undefined}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (t.channel) navigate({ view: 'conversation', conversationId: t.channel.id });
+              else onOpenThread?.(m, t.blockIndex, t.blockEnd);
+            }}
+          >
+            {t.channel && <span className="channel-link">→ #{t.channel.name}</span>}
+            <PopNumber value={t.replyCount} /> {t.replyCount === 1 ? 'reply' : 'replies'}
+            {t.blockEnd > t.blockIndex && <span className="muted">· {t.blockEnd - t.blockIndex + 1} paragraphs</span>}
+            <span className="muted">· {relTime(t.lastActivity)}</span>
+          </button>
+        ))}
+      </div>
+    );
+  };
 }
 
 export function relTime(ts: number): string {
@@ -141,14 +323,36 @@ function CacheBadge({ m }: { m: Msg }) {
     .join('\n');
   return (
     <span className={`cache-badge ${pct >= 80 ? 'hit' : pct < 30 ? 'miss' : ''}`} title={title}>
-      cache {pct}%
+      cache <PopNumber value={pct} />%
     </span>
+  );
+}
+
+function StepPrompt({ m }: { m: Msg }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Accordion
+      open={open}
+      className="step-prompt"
+      head={
+        <button className="step-head t-acc-head" onClick={() => setOpen(!open)} aria-expanded={open}>
+          {m.authorId} · step {m.meta.step} prompt for @{m.meta.agent} <AccChevron />
+        </button>
+      }
+    >
+      <pre>{m.content}</pre>
+    </Accordion>
   );
 }
 
 function TerminalButton({ m }: { m: Msg }) {
   const { config } = useAppData();
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState(0);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(0), 1500);
+    return () => clearTimeout(t);
+  }, [copied]);
   const cmd = `cd '${m.cwd!.replace(/'/g, `'\\''`)}' && ${config?.claudeBin ?? 'claude'} --resume ${m.sessionId}`;
   return (
     <button
@@ -156,61 +360,13 @@ function TerminalButton({ m }: { m: Msg }) {
       title={cmd}
       onClick={async () => {
         await navigator.clipboard.writeText(cmd);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1500);
+        setCopied(Date.now());
       }}
     >
-      {copied ? 'Copied' : 'Open in terminal'}
+      {copied > 0 && <SuccessCheck play={copied} key={copied} />}
+      <SwapText text={copied ? 'Copied' : 'Open in terminal'} />
     </button>
   );
-}
-
-export function toolSummary(t: ToolEvent): string {
-  const i = (t.input ?? {}) as Record<string, any>;
-  const v = i.file_path ?? i.path ?? i.command ?? i.pattern ?? i.url ?? i.query ?? i.description ?? i.prompt ?? i.action ?? '';
-  const s = typeof v === 'string' ? v : JSON.stringify(v);
-  return s.length > 120 ? s.slice(0, 120) + '…' : s;
-}
-
-function ToolChips({ events }: { events: ToolEvent[] }) {
-  const [open, setOpen] = useState<string | null>(null);
-  const sel = events.find((e) => e.id === open);
-  return (
-    <>
-      <div className="tools">
-        {events.map((t) => (
-          <button
-            key={t.id}
-            className={`chip-tool ${t.denied ? 'denied' : t.is_error ? 'err' : ''}`}
-            onClick={() => setOpen(open === t.id ? null : t.id)}
-            title={t.denied ? 'Blocked by the read-only gate' : undefined}
-          >
-            {t.denied && <span aria-label="denied">🔒</span>}
-            <span className="t-name">{prettyTool(t.name)}</span>
-            <span className="t-arg">{toolSummary(t)}</span>
-            {t.output_preview === undefined && <span className="cursor" style={{ width: 5, height: 10 }} />}
-          </button>
-        ))}
-      </div>
-      {sel && (
-        <div className="tool-detail">
-          <strong>{sel.name}</strong>
-          <pre>{JSON.stringify(sel.input, null, 2)}</pre>
-          {sel.output_preview !== undefined && (
-            <>
-              <strong>{sel.denied ? 'Denied' : sel.is_error ? 'Error' : 'Output'}</strong>
-              <pre>{sel.output_preview || '(empty)'}</pre>
-            </>
-          )}
-        </div>
-      )}
-    </>
-  );
-}
-
-function prettyTool(name: string): string {
-  const m = /^mcp__(.+?)__(.+)$/.exec(name);
-  return m ? `${m[1]}·${m[2]}` : name;
 }
 
 function ErrorCard({ m }: { m: Msg }) {
@@ -241,14 +397,42 @@ function SystemMessage({ m, run }: MessageProps) {
       </div>
     );
   if (kind === 'workflow_card') return <WorkflowCard m={m} run={run} />;
+  if (kind === 'moved') return <MovedNote to={m.meta.to} />;
+  if (kind === 'promoted') return <PromotedNote m={m} />;
   if (kind === 'workflow_step')
     return (
-      <details className="step-prompt">
-        <summary>
-          {m.authorId} · step {m.meta.step} prompt for @{m.meta.agent}
-        </summary>
-        <pre>{m.content}</pre>
-      </details>
+      <StepPrompt m={m} />
     );
   return <div className="system-msg">{m.content}</div>;
+}
+
+function MovedNote({ to }: { to: string }) {
+  const { config } = useAppData();
+  return (
+    <div className="system-msg moved">
+      → Moved to <code>{tildify(to, config?.homeDir)}</code>. Replies run there from now on.
+    </div>
+  );
+}
+
+/** Marks where a side thread became its own channel; earlier replies were the thread. */
+function PromotedNote({ m }: { m: Msg }) {
+  const from = m.meta.from as { conversationId: string; name: string; kind: string } | undefined;
+  return (
+    <div className="system-msg promoted">
+      <span className="promoted-rule" />
+      <span>
+        Became a channel
+        {from && (
+          <>
+            {' · thread started in '}
+            <button className="link" onClick={() => navigate({ view: 'conversation', conversationId: from.conversationId })}>
+              {from.kind === 'chat' ? from.name : `#${from.name}`}
+            </button>
+          </>
+        )}
+      </span>
+      <span className="promoted-rule" />
+    </div>
+  );
 }

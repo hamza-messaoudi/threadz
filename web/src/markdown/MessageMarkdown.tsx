@@ -1,11 +1,12 @@
 import { MarkdownDocument } from '@comark/react';
-import { Fragment, memo, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { Fragment, memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { flushSync } from 'react-dom';
 import type { Block } from './blocks.ts';
 import { components } from './components.tsx';
 import { BlockBoundary } from './BlockBoundary.tsx';
 import { BlockContext } from './context.ts';
 import { cachedFinal, parseFinal, parseMessage, type Parsed } from './parse.ts';
+import { streamWords, useStreamWords } from './stream-words.ts';
 import { componentTags } from './tags.ts';
 
 export interface MessageMarkdownProps {
@@ -89,11 +90,22 @@ export const MessageMarkdown = memo(function MessageMarkdown({ id, content, stre
   return <MarkdownBlocks parsed={parsed} streaming={streaming} renderBlock={renderBlock} className={className} />;
 });
 
-/** Renders an already parsed message: one `data-block` per top-level node, each with its own boundary. */
-export function MarkdownBlocks({ parsed, streaming = false, renderBlock, className }: { parsed: Parsed } & Pick<MessageMarkdownProps, 'streaming' | 'renderBlock' | 'className'>) {
-  const n = parsed.blocks.length;
+/**
+ * Renders an already parsed message: one `data-block` per top-level node, each with its own boundary.
+ * `parsed.blocks` may be a slice of the message; `total` is then its full block count.
+ */
+export function MarkdownBlocks({
+  parsed,
+  streaming = false,
+  renderBlock,
+  className,
+  total,
+}: { parsed: Parsed; total?: number } & Pick<MessageMarkdownProps, 'streaming' | 'renderBlock' | 'className'>) {
+  const n = total ?? parsed.blocks.length;
+  const ref = useRef<HTMLDivElement>(null);
+  useStreamWords(ref, streaming);
   return (
-    <div className={`md-body ${streaming ? 'md-streaming' : ''} ${className ?? ''}`}>
+    <div ref={ref} className={`md-body ${streaming ? 'md-streaming' : ''} ${className ?? ''}`}>
       {parsed.blocks.map((b) => {
         const last = b.index === n - 1;
         const body = <BlockView node={b.node} last={last} open={streaming && last} />;
@@ -114,7 +126,9 @@ const renderNode = (node: Block['node']) => <MarkdownDocument value={{ nodes: [n
 const OPEN = { open: true };
 const CLOSED = { open: false };
 
-const BlockView = memo(function BlockView({ node, last, open }: { node: Block['node']; last: boolean; open: boolean }) {
+const BlockView = memo(function BlockView({ node: source, last, open }: { node: Block['node']; last: boolean; open: boolean }) {
+  // The block still being written streams its words in; a finished block renders as written.
+  const node = useMemo(() => (open ? streamWords(source) : source), [source, open]);
   return (
     <BlockContext.Provider value={open ? OPEN : CLOSED}>
       <div className={`md-root ${last ? 'md-last' : ''}`}>

@@ -8,8 +8,7 @@
 
 @import 'tailwindcss/theme.css' layer(theme);
 @import 'tailwindcss/utilities.css' layer(utilities) source(none);
-@import '@fontsource-variable/geist';
-@import '@fontsource-variable/geist-mono';
+@import 'hack-font/build/web/hack.css';
 @import './tokens.css';
 
 @source '../registry';
@@ -20,9 +19,9 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme inline {
-  --font-mono: 'Geist Mono Variable', ui-monospace, monospace;
-  --font-sans: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
-  --font-mono--font-feature-settings: 'ss01' 1, 'zero' 1;
+  /* Message text is set in Hack throughout, prose and code alike. */
+  --font-mono: 'Hack', ui-monospace, monospace;
+  --font-sans: 'Hack', ui-monospace, monospace;
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -128,7 +127,6 @@
   }
   .md-root :where(code, kbd, samp, pre) {
     font-family: var(--font-mono);
-    font-feature-settings: 'ss01' 1, 'zero' 1;
     font-size: 1em;
   }
   .md-root :where(img, svg, video, canvas) {
@@ -184,7 +182,6 @@
 
   .md-root :is(h1, h2, h3, h4, h5, h6):not(figure *) {
     font-family: var(--font-mono);
-    font-feature-settings: 'ss01' 1, 'zero' 1;
     font-weight: 400;
     color: var(--foreground);
   }
@@ -269,7 +266,6 @@
   }
   .md-task {
     font-family: var(--font-mono);
-    font-feature-settings: 'ss01' 1, 'zero' 1;
     font-size: 0.875rem;
     user-select: none;
     color: var(--graph-muted);
@@ -364,35 +360,6 @@
   .md-unparsed {
     white-space: pre-wrap;
   }
-
-  /* Streaming caret: a blinking block after the last block's text (CSS only). */
-  .md-streaming .md-last > .comark-content > :is(p, h1, h2, h3, h4, h5, h6, pre):last-child::after,
-  .md-streaming .md-last > .comark-content > blockquote:last-child > :last-child::after,
-  .md-streaming .md-last > .comark-content > :is(ul, ol):last-child > li:last-child::after {
-    content: '';
-    display: inline-block;
-    width: 0.55em;
-    height: 1.05em;
-    margin-left: 0.2em;
-    vertical-align: -0.15em;
-    background: var(--graph-accent);
-    animation: md-caret 1s steps(2) infinite;
-  }
-  .md-streaming .md-last > .comark-content > :is(figure, table, div):last-child::after {
-    content: '';
-    display: block;
-    width: 0.55em;
-    height: 1.05em;
-    margin-top: 0.5rem;
-    background: var(--graph-accent);
-    animation: md-caret 1s steps(2) infinite;
-  }
-}
-
-@keyframes md-caret {
-  to {
-    opacity: 0;
-  }
 }
 
 /*
@@ -406,8 +373,13 @@
 .block.active-source .md-root {
   --background: var(--accent-soft);
 }
-.quote .md-root {
+.quote .md-root,
+.user-bubble .md-root {
   --background: var(--bg-soft);
+}
+/* Size containment would give the frame no width to shrink-wrap: your messages fit their text. */
+.user-bubble .md-body {
+  container-type: normal;
 }
 
 /* Style lab, demo width: the demo's page colour instead of the chrome's, so figures compare 1:1. */

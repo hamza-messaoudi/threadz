@@ -17,8 +17,11 @@ type Action =
   | { type: 'upsert'; message: Message }
   | { type: 'delta'; id: string; text: string }
   | { type: 'tool'; id: string; toolEvents: Message['toolEvents'] }
+  | { type: 'thinking'; id: string; thinkingId: string; at: number; seq: number; text: string }
   | { type: 'thread'; child: ChildThread }
-  | { type: 'run'; run: Run };
+  | { type: 'run'; run: Run }
+  | { type: 'moved'; cwd: string; moved: boolean }
+  | { type: 'promoted'; conversationId: string };
 
 const initial: ThreadState = { loading: true, error: null, data: null, messages: [], childThreads: [], runs: {} };
 
@@ -56,12 +59,26 @@ function reducer(s: ThreadState, a: Action): ThreadState {
       messages[i] = { ...messages[i], toolEvents: a.toolEvents };
       return { ...s, messages };
     }
+    case 'thinking': {
+      const i = s.messages.findIndex((m) => m.id === a.id);
+      if (i < 0) return s;
+      const messages = s.messages.slice();
+      const list = messages[i].thinking ?? [];
+      const t = list.find((x) => x.id === a.thinkingId);
+      const thinking = t ? list.map((x) => (x === t ? { ...x, text: x.text + a.text } : x)) : [...list, { id: a.thinkingId, at: a.at, seq: a.seq, text: a.text }];
+      messages[i] = { ...messages[i], thinking };
+      return { ...s, messages };
+    }
     case 'thread': {
       const rest = s.childThreads.filter((t) => t.id !== a.child.id);
       return { ...s, childThreads: [...rest, a.child] };
     }
     case 'run':
       return { ...s, runs: { ...s.runs, [a.run.id]: a.run } };
+    case 'moved':
+      return s.data ? { ...s, data: { ...s.data, thread: { ...s.data.thread, cwd: a.cwd, moved: a.moved } } } : s;
+    case 'promoted':
+      return s.data ? { ...s, data: { ...s.data, thread: { ...s.data.thread, conversationId: a.conversationId, parentThreadId: null } } } : s;
   }
 }
 
@@ -88,8 +105,11 @@ export function useThread(threadId: string | null) {
       if (event === 'message.created' || event === 'message.updated' || event === 'message.done') dispatch({ type: 'upsert', message: d });
       else if (event === 'message.delta') dispatch({ type: 'delta', id: d.id, text: d.text });
       else if (event === 'message.tool') dispatch({ type: 'tool', id: d.id, toolEvents: d.toolEvents });
+      else if (event === 'message.thinking') dispatch({ type: 'thinking', id: d.id, thinkingId: d.thinkingId, at: d.at, seq: d.seq, text: d.text });
       else if (event === 'thread.created') dispatch({ type: 'thread', child: d });
       else if (event === 'run.updated') dispatch({ type: 'run', run: d });
+      else if (event === 'thread.updated' && d.id === threadId) dispatch({ type: 'moved', cwd: d.cwd, moved: d.moved });
+      else if (event === 'thread.promoted' && d.id === threadId) dispatch({ type: 'promoted', conversationId: d.conversationId });
     },
     load,
   );

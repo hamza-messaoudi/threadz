@@ -22,8 +22,133 @@
   --code-bg: #f5f5f7;
   --shadow: 0 8px 30px rgba(20, 20, 40, 0.14);
   --radius: 8px;
+  /* transitions.dev "Panel reveal" motion tokens */
+  --panel-open-dur: 400ms;
+  --panel-close-dur: 350ms;
+  --panel-translate-y: calc(187px * 0.5);
+  --panel-blur: 2px;
+  --panel-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* transitions.dev "Icon swap" motion tokens */
+  --icon-swap-dur: 250ms;
+  --icon-swap-blur: 2px;
+  --icon-swap-start-scale: 0.25;
+  --icon-swap-ease: ease-in-out;
+  /* transitions.dev "Matrix dot loader" tokens */
+  --matrix-cycle: 1200ms;
+  --matrix-base: #d9d9d9;
+  --matrix-active: #85858f;
+  --matrix-ease: ease-in-out;
+  /* transitions.dev "Thinking states" tokens */
+  --think-hold: 2000ms;
+  --think-swap: 150ms;
+  --think-gap: 50ms;
+  --think-distance: 8px;
+  --think-blur: 2px;
+  --think-shimmer: 2000ms;
+  --think-base: #7c7c7c;
+  --think-highlight: #0d0d0d;
+  --think-ease: ease-in-out;
+  /* transitions.dev "Streaming text" tokens */
+  --stream-gap: 60ms;
+  --stream-fade: 350ms;
+  --stream-blur: 1px;
+  --stream-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* transitions.dev "Toggle" tokens; travel = track 22px - thumb 8px - 2 × 2px inset */
+  --toggle-dur: 350ms;
+  --toggle-travel: 10px;
+  --toggle-ov1: 1px;
+  --toggle-ov2: 0px;
+  --toggle-track: 0ms;
+  --toggle-ease: cubic-bezier(0.34, 1.35, 0.64, 1);
+  /* transitions.dev "Modal open / close" tokens */
+  --modal-open-dur: 250ms;
+  --modal-close-dur: 150ms;
+  --modal-scale: 0.96;
+  --modal-scale-close: 0.96;
+  --modal-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* transitions.dev "Accordion expand" tokens */
+  --acc-expand: 250ms;
+  --acc-collapse: 250ms;
+  --acc-chevron: 250ms;
+  --acc-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* transitions.dev "Number pop-in" tokens */
+  --digit-dur: 500ms;
+  --digit-distance: 8px;
+  --digit-stagger: 70ms;
+  --digit-blur: 2px;
+  --digit-ease: cubic-bezier(0.34, 1.45, 0.64, 1);
+  --digit-dir-x: 0;
+  --digit-dir-y: 1;
+  /* transitions.dev "Text states swap" tokens */
+  --text-swap-dur: 150ms;
+  --text-swap-translate-y: 4px;
+  --text-swap-blur: 2px;
+  --text-swap-ease: ease-in-out;
+  /* transitions.dev "Tooltip" tokens */
+  --tt-in-dur: 150ms;
+  --tt-out-dur: 50ms;
+  --tt-scale: 0.98;
+  --tt-delay: 80ms;
+  --tt-in-ease: ease-out;
+  --tt-out-ease: ease-out;
+  --tt-move-dur: 160ms;
+  --tt-move-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --tt-bg: #ffffff;
+  --tt-fg: #2f2f2f;
+  /* transitions.dev "Tabs sliding" tokens */
+  --tabs-dur: 250ms;
+  --tabs-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --tabs-text-muted: rgba(15, 15, 15, 0.8);
+  --tabs-text-active: #0f0f0f;
+  --tabs-bar-bg: #f1f1f1;
+  --tabs-pill-bg: #ffffff;
+  /* transitions.dev "Skeleton loader and reveal" tokens (the pulse repeats until the data is in) */
+  --pulse-dur: 1000ms;
+  --pulse-count: infinite;
+  --pulse-min: 0.5;
+  --reveal-dur: 400ms;
+  --reveal-blur: 2px;
+  --reveal-ease: ease-in-out;
+  /* transitions.dev "Error state shake" tokens */
+  --shake-distance: 6px;
+  --shake-overshoot: 4px;
+  --shake-dur-a: 80ms;
+  --shake-dur-b: 60ms;
+  --shake-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --revert-hold: 3000ms;
+  --revert-dur: 280ms;
+  /* transitions.dev "Success check" tokens (scaled for a 12px icon: smaller rise and blur) */
+  --check-opacity-dur: 500ms;
+  --check-rotate-dur: 500ms;
+  --check-rotate-from: 80deg;
+  --check-bob-dur: 500ms;
+  --check-y-amount: 10px;
+  --check-blur-dur: 500ms;
+  --check-blur-from: 4px;
+  --check-path-dur: 500ms;
+  --check-path-delay: 80ms;
+  --check-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --check-ease-opacity: cubic-bezier(0.22, 1, 0.36, 1);
+  --check-ease-rotate: cubic-bezier(0.22, 1, 0.36, 1);
+  --check-ease-bob: cubic-bezier(0.34, 1.35, 0.64, 1);
+  --check-ease-path: cubic-bezier(0.22, 1, 0.36, 1);
+  /* transitions.dev "Texts reveal" tokens */
+  --stagger-dur: 500ms;
+  --stagger-distance: 12px;
+  --stagger-stagger: 40ms;
+  --stagger-blur: 3px;
+  --stagger-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* transitions.dev "Card resize" tokens */
+  --resize-dur: 300ms;
+  --resize-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* transitions.dev "Menu dropdown" motion tokens */
+  --dropdown-open-dur: 250ms;
+  --dropdown-close-dur: 150ms;
+  --dropdown-pre-scale: 0.97;
+  --dropdown-closing-scale: 0.99;
+  --dropdown-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, Roboto, sans-serif;
-  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --mono: 'Hack', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   color-scheme: light;
 }
 
@@ -49,6 +174,16 @@
   --ok: #4cc27f;
   --code-bg: #202027;
   --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  --matrix-base: #3a3a3e;
+  --matrix-active: #b8b8c2;
+  --think-base: #9a9a9a;
+  --think-highlight: #f5f5f5;
+  --tt-bg: #2a2a31;
+  --tt-fg: #e8e8ee;
+  --tabs-text-muted: rgba(232, 232, 238, 0.7);
+  --tabs-text-active: #f4f4f8;
+  --tabs-bar-bg: #24242a;
+  --tabs-pill-bg: #3a3a43;
   color-scheme: dark;
 }
 
@@ -108,9 +243,18 @@ pre {
 
 /* ---------- layout ---------- */
 .app {
+  --side-open-w: 248px;
+  --rail-w: 48px;
+  --side-w: var(--side-open-w);
   display: grid;
-  grid-template-columns: 248px minmax(0, 1fr);
+  grid-template-columns: var(--side-w) minmax(0, 1fr);
   height: 100%;
+  /* The column resizes on the same clock as the panel reveal of its contents. */
+  transition: grid-template-columns var(--panel-open-dur) var(--panel-ease);
+}
+.app.side-collapsed {
+  --side-w: var(--rail-w);
+  transition-duration: var(--panel-close-dur);
 }
 .main {
   display: flex;
@@ -120,20 +264,79 @@ pre {
 }
 
 /* ---------- sidebar ---------- */
+.sidebar-slot {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
 .sidebar {
+  position: relative;
+  height: 100%;
   background: var(--side-bg);
   border-right: 1px solid var(--border);
+}
+/* The full list and the icon rail are stacked; one reveals as the other hides. */
+.side-layer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
   display: flex;
   flex-direction: column;
+}
+.side-full {
+  width: var(--side-open-w);
   overflow-y: auto;
   padding: 10px 8px;
   gap: 6px;
+  --panel-translate-x: -24px;
+}
+.side-rail {
+  width: var(--rail-w);
+  padding: 50px 0 10px; /* room for the toggle */
+  --panel-translate-x: -12px;
+}
+.side-toggle-btn {
+  position: absolute;
+  top: 10px;
+  right: 8px;
+  z-index: 2;
+}
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  height: 100%;
+}
+.rail .conn {
+  margin: 6px 0;
+}
+.rail-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+.rail-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .app {
+    transition: none;
+  }
 }
 .sidebar-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 4px 8px 6px;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 40px 6px 8px; /* right: the toggle sits there */
 }
 .brand {
   font-weight: 700;
@@ -316,6 +519,21 @@ pre {
   border-color: transparent;
   color: var(--danger);
 }
+/* Fades on the modal's clock; the dialog itself is a .t-modal. */
+.modal-backdrop {
+  opacity: 0;
+  transition: opacity var(--modal-open-dur) var(--modal-ease);
+}
+.modal-backdrop.is-open {
+  opacity: 1;
+}
+.modal-backdrop.is-closing {
+  opacity: 0;
+  transition-duration: var(--modal-close-dur);
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop { transition: none; }
+}
 .modal-backdrop {
   position: fixed;
   inset: 0;
@@ -363,6 +581,12 @@ pre {
   color: var(--danger);
   font-size: 13px;
 }
+/* Error state shake: the shaking element's border turns red while .is-error holds. */
+.field input.is-error,
+.composer.is-error,
+.composer.is-error:focus-within {
+  border-color: var(--danger);
+}
 .banner {
   padding: 8px 16px;
   border-bottom: 1px solid var(--border);
@@ -403,6 +627,7 @@ pre {
 
 /* ---------- conversation ---------- */
 .conversation {
+  position: relative;
   flex: 1;
   display: flex;
   min-height: 0;
@@ -429,6 +654,9 @@ pre {
   margin: 0;
   white-space: nowrap;
 }
+.conv-dir.moved {
+  color: var(--accent);
+}
 .conv-dir {
   font-family: var(--mono);
   font-size: 12px;
@@ -454,20 +682,108 @@ pre {
   flex-direction: column;
   padding: 12px 0;
 }
+/* The message list's skeleton (transitions.dev skeleton reveal): the list stays in the flow and the
+   placeholder rows sit on top of it until the thread has loaded. */
+.skel-flow {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.skel-flow:not(.is-revealed) {
+  min-height: 240px;
+}
+.skel-flow > .t-skel-content {
+  position: relative;
+  inset: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.skel-flow > .t-skel-skeleton {
+  bottom: auto;
+  pointer-events: none;
+}
+.skel-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 10px;
+  padding: 10px 18px;
+}
+.thread-panel .skel-row {
+  grid-template-columns: 28px minmax(0, 1fr);
+  padding: 6px 14px;
+}
+.skel-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--bg-hover);
+}
+.thread-panel .skel-avatar {
+  width: 26px;
+  height: 26px;
+}
+.skel-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 2px;
+}
+.skel-line {
+  height: 10px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  width: 92%;
+}
+.skel-line.short {
+  width: 22%;
+}
+.skel-line.mid {
+  width: 64%;
+}
 .panel-slot:empty {
   display: none;
 }
 
 /* ---------- messages ---------- */
+/* Agent replies sit on the page; your messages are framed on the right. The left gutter holds the thread button. */
 .msg {
-  display: grid;
-  grid-template-columns: 36px minmax(0, 1fr);
-  gap: 10px;
-  padding: 6px 18px;
+  padding: 8px 18px 8px 44px;
   position: relative;
+  min-width: 0;
 }
-.msg:hover {
+.msg.user {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding-top: 12px;
+  padding-bottom: 6px;
+}
+.user-bubble {
+  max-width: min(88%, 760px);
+  min-width: 0;
   background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 16px;
+}
+.msg-meta {
+  font-size: 11px;
+  color: var(--faint);
+  margin-top: 3px;
+  padding-right: 4px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+.msg.user:hover .msg-meta {
+  opacity: 1;
+}
+.msg-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  align-self: center;
+  flex: none;
 }
 .msg.flash {
   animation: flash 1.6s ease-out;
@@ -481,30 +797,16 @@ pre {
     background: transparent;
   }
 }
-.avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: white;
-  font-weight: 700;
-  font-size: 13px;
-  margin-top: 2px;
-}
-.avatar.user {
-  background: var(--border-strong);
-  color: var(--text);
-}
 .msg-head {
   display: flex;
   align-items: baseline;
   gap: 8px;
   flex-wrap: wrap;
+  margin-bottom: 4px;
 }
 .msg-author {
-  font-weight: 700;
+  font-weight: 600;
+  font-size: 13px;
 }
 .msg-time {
   font-size: 11.5px;
@@ -577,6 +879,31 @@ pre {
 .msg-body {
   overflow-wrap: anywhere;
 }
+/* A running turn: matrix loader + the thinking line that follows its tool calls. */
+.agent-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  min-width: 0;
+}
+.agent-status .t-matrix {
+  flex: none;
+}
+.agent-status-line.t-think {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 18px;
+}
+.agent-status-line .t-think-sizer,
+.agent-status-line .t-think-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .msg-error {
   border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
   background: var(--danger-soft);
@@ -592,9 +919,30 @@ pre {
   margin: 6px 0 0;
 }
 .system-msg {
-  padding: 4px 18px 4px 64px;
+  padding: 4px 18px 4px 44px;
   color: var(--muted);
   font-size: 13px;
+}
+/* Divider where a side thread became a channel: replies above it were the thread. */
+.system-msg.promoted {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  font-size: 12px;
+}
+.system-msg.promoted .promoted-rule {
+  flex: 1;
+  min-width: 16px;
+  border-top: 1px dashed var(--border-strong);
+}
+.system-msg.promoted .link {
+  color: var(--accent);
+}
+.system-msg.moved code {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text);
 }
 .run-header {
   display: flex;
@@ -657,6 +1005,26 @@ pre {
 .block.active-source {
   background: var(--accent-soft);
 }
+/* Picked for a new thread, before the thread is opened. */
+.block.pending-passage {
+  border-left-color: color-mix(in srgb, var(--accent) 55%, var(--bg));
+  background: color-mix(in srgb, var(--accent-soft) 70%, transparent);
+}
+/* A passage of several blocks reads as one bracket: the rail bridges the gap to the block above. */
+.block.rail-join::before,
+.block.pending-join::before {
+  content: '';
+  position: absolute;
+  left: -3px;
+  bottom: 100%;
+  width: 3px;
+  height: 2rem;
+  background: var(--accent);
+  pointer-events: none;
+}
+.block.pending-join::before {
+  background: color-mix(in srgb, var(--accent) 55%, var(--bg));
+}
 .block-gutter {
   user-select: none;
   position: absolute;
@@ -680,7 +1048,8 @@ pre {
   color: var(--accent);
 }
 .thread-badge {
-  display: inline-flex;
+  display: flex;
+  width: fit-content;
   gap: 6px;
   align-items: center;
   font-size: 11.5px;
@@ -691,43 +1060,147 @@ pre {
 .thread-badge .muted {
   font-weight: 400;
 }
-/* tool chips */
-.tools {
+.thread-badge:hover {
+  text-decoration: underline;
+}
+/* The thread became its own channel: the badge leads there. */
+.thread-badge.to-channel .channel-link {
+  background: var(--accent-soft);
+  border-radius: 4px;
+  padding: 0 5px;
+}
+/* An agent turn's steps: Thinking and tool rows between its paragraphs, folded once it answers. */
+.turn-step {
+  margin: 6px 0;
+}
+.msg-body > .turn-step:first-child,
+.steps-group > .turn-step:first-child {
+  margin-top: 0;
+}
+.step-line,
+.steps-summary {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 4px 0;
-}
-.chip-tool {
-  display: inline-flex;
   align-items: center;
-  gap: 5px;
-  border: 1px solid var(--border);
-  background: var(--bg-soft);
-  border-radius: 999px;
-  padding: 1px 9px;
-  font-size: 12px;
-  color: var(--muted);
+  gap: 8px;
   max-width: 100%;
+  min-width: 0;
+  padding: 2px 0;
+  font-size: 13.5px;
+  color: var(--muted);
+  text-align: left;
 }
-.chip-tool .t-name {
-  font-weight: 600;
+.step-line:hover:not(:disabled) .step-name,
+.steps-summary:hover {
   color: var(--text);
 }
-.chip-tool .t-arg {
-  font-family: var(--mono);
-  font-size: 11.5px;
+.step-line:disabled {
+  cursor: default;
+}
+.step-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--faint);
+}
+.step-name {
+  position: relative;
+  flex: none;
+  color: var(--text);
+  transition: color 150ms ease;
+}
+.step-arg {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 340px;
+  max-width: min(60ch, 100%);
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 1px 7px;
 }
-.chip-tool.denied {
-  border-color: color-mix(in srgb, var(--danger) 40%, transparent);
-  background: var(--danger-soft);
+.step-arg.prose {
+  font-family: inherit;
+  font-size: 12.5px;
 }
-.chip-tool.err {
-  border-color: color-mix(in srgb, var(--warn) 40%, transparent);
+.turn-step.err .step-arg {
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+}
+.turn-step.denied .step-icon,
+.turn-step.denied .step-name {
+  color: var(--danger);
+}
+/* A running tool, or thinking still being written: the name shimmers. */
+.step-name.step-live {
+  color: var(--think-base);
+}
+.step-name.step-live::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(90deg, transparent 0%, transparent 40%, var(--think-highlight) 50%, transparent 60%, transparent 100%);
+  background-size: 400% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: t-think-shimmer var(--think-shimmer) linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .step-name.step-live::before {
+    display: none;
+  }
+}
+.step-detail {
+  margin: 4px 0 8px 23px;
+}
+.step-thinking {
+  white-space: pre-wrap;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+  border-left: 2px solid var(--border);
+  padding: 2px 0 2px 12px;
+  max-height: 360px;
+  overflow: auto;
+}
+.steps-summary {
+  margin: 0 0 6px;
+}
+.steps-chevron {
+  display: inline-flex;
+  color: var(--faint);
+  transition: transform 200ms var(--acc-ease, ease);
+}
+.steps-summary[data-open="true"] .steps-chevron {
+  transform: rotate(90deg);
+}
+.steps-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--faint);
+}
+.steps-more {
+  font-size: 11.5px;
+}
+.steps-group {
+  border-left: 2px solid var(--border);
+  padding-left: 14px;
+  margin: 0 0 10px 6px;
+}
+.steps-group > .md-body {
+  margin: 6px 0;
+}
+/* The text between steps: spacing like paragraphs of one message. */
+.msg-body > .md-body + .md-body,
+.msg-body > .turn-step + .md-body,
+.msg-body > .t-acc + .md-body {
+  margin-top: 8px;
 }
 .tool-detail {
   border: 1px solid var(--border);
@@ -787,8 +1260,20 @@ pre {
 .mention-chip.dir {
   background: var(--bg-hover);
   color: var(--text);
+}
+/* A directory the thread moves into: accented, with an arrow (a plain #dir chip is only referenced). */
+.mention-chip.dir,
+.mention-chip.cd {
   font-family: var(--mono);
   font-size: 12.5px;
+  cursor: pointer;
+}
+.mention-chip.cd {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.mention-chip.cd::before {
+  content: '→ ';
 }
 .mention-chip.workflow {
   background: color-mix(in srgb, var(--warn) 16%, transparent);
@@ -829,8 +1314,7 @@ pre {
   background: var(--border-strong);
   position: relative;
 }
-.yolo-toggle .knob::after {
-  content: '';
+.yolo-toggle .knob .t-toggle-thumb {
   position: absolute;
   top: 2px;
   left: 2px;
@@ -838,7 +1322,6 @@ pre {
   height: 8px;
   border-radius: 50%;
   background: white;
-  transition: left 0.12s;
 }
 .yolo-toggle.on {
   color: var(--danger);
@@ -846,9 +1329,6 @@ pre {
 }
 .yolo-toggle.on .knob {
   background: var(--danger);
-}
-.yolo-toggle.on .knob::after {
-  left: 12px;
 }
 .send-btn {
   background: var(--accent);
@@ -873,6 +1353,658 @@ pre {
   z-index: 20;
   max-height: 320px;
   overflow-y: auto;
+}
+/* transitions.dev "Panel reveal": slide + fade + cross-blur, toggled with data-open. */
+.t-panel-slide {
+  transform: translateY(var(--panel-translate-y));
+  opacity: 0;
+  filter: blur(var(--panel-blur));
+  pointer-events: none;
+  transition:
+    transform var(--panel-close-dur) var(--panel-ease),
+    opacity   var(--panel-close-dur) var(--panel-ease),
+    filter    var(--panel-close-dur) var(--panel-ease);
+  will-change: transform, opacity, filter;
+}
+.t-panel-slide[data-open="true"] {
+  transform: translateY(0);
+  opacity: 1;
+  filter: blur(0);
+  pointer-events: auto;
+  transition:
+    transform var(--panel-open-dur) var(--panel-ease),
+    opacity   var(--panel-open-dur) var(--panel-ease),
+    filter    var(--panel-open-dur) var(--panel-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-panel-slide { transition: none !important; }
+}
+/* Side panels slide on X instead: set --panel-translate-x (negative = from the left). */
+.t-panel-slide[data-axis="x"] {
+  transform: translateX(var(--panel-translate-x, 24px));
+}
+.t-panel-slide[data-axis="x"][data-open="true"] {
+  transform: translateX(0);
+}
+
+/* transitions.dev "Icon swap": two icons in one slot, data-state="a" | "b". */
+.t-icon-swap {
+  position: relative;
+  display: inline-grid;
+}
+.t-icon-swap .t-icon {
+  grid-area: 1 / 1;
+  transition:
+    opacity   var(--icon-swap-dur) var(--icon-swap-ease),
+    filter    var(--icon-swap-dur) var(--icon-swap-ease),
+    transform var(--icon-swap-dur) var(--icon-swap-ease);
+  will-change: opacity, filter, transform;
+}
+.t-icon-swap[data-state="a"] .t-icon[data-icon="a"],
+.t-icon-swap[data-state="b"] .t-icon[data-icon="b"] {
+  opacity: 1;
+  filter: blur(0);
+  transform: scale(1);
+}
+.t-icon-swap[data-state="a"] .t-icon[data-icon="b"],
+.t-icon-swap[data-state="b"] .t-icon[data-icon="a"] {
+  opacity: 0;
+  filter: blur(var(--icon-swap-blur));
+  transform: scale(var(--icon-swap-start-scale));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-icon-swap .t-icon { transition: none !important; }
+}
+
+/* transitions.dev "Matrix dot loader": <MatrixLoader> renders the 16 dots with their --d delays. */
+.t-matrix {
+  display: grid;
+  grid-template-columns: repeat(4, 2px);
+  grid-auto-rows: 2px;
+  gap: 2px;
+}
+.t-matrix i {
+  display: block;
+  background: var(--matrix-base);
+  animation: t-matrix-pulse var(--matrix-cycle) var(--matrix-ease) infinite;
+  animation-delay: calc(var(--d, 0) * 1ms);
+}
+/* Hole positions (rounded variants) render nothing. */
+.t-matrix i.is-gap { visibility: hidden; animation: none; }
+@keyframes t-matrix-pulse {
+  0%, 45%, 100% { background-color: var(--matrix-base); }
+  15%           { background-color: var(--matrix-active); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-matrix i { animation: none !important; }
+}
+
+/* transitions.dev "Thinking states": <ThinkingLine> swaps the lines. */
+.t-think { position: relative; display: inline-block; text-align: center; }
+.t-think-sizer { display: block; visibility: hidden; white-space: nowrap; }
+.t-think-text {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: block;
+  color: var(--think-base);
+  white-space: nowrap;
+  transform: translateY(0);
+  filter: blur(0);
+  opacity: 1;
+  transition:
+    transform var(--think-swap) var(--think-ease),
+    filter var(--think-swap) var(--think-ease),
+    opacity var(--think-swap) var(--think-ease);
+  will-change: transform, filter, opacity;
+}
+/* Shimmer sweeps the glyphs only (background-clip: text). */
+.t-think-text::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(90deg,
+    transparent 0%, transparent 40%,
+    var(--think-highlight) 50%,
+    transparent 60%, transparent 100%);
+  background-size: 400% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: t-think-shimmer var(--think-shimmer) linear infinite;
+}
+@keyframes t-think-shimmer {
+  0%   { background-position: 100% 0; }
+  100% { background-position: 0% 0; }
+}
+/* The outgoing line floats over the box so both halves animate. */
+.t-think-text.is-exit {
+  transform: translateY(calc(var(--think-distance) * -1));
+  filter: blur(var(--think-blur));
+  opacity: 0;
+}
+.t-think-text.is-enter-start {
+  transition: none;
+  transform: translateY(var(--think-distance));
+  filter: blur(var(--think-blur));
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-think-text { transition: none !important; transform: none !important; filter: none !important; }
+  .t-think-text::before { display: none !important; }
+}
+
+/* transitions.dev "Streaming text": the streaming block's words are .t-stream-w spans (useStreamWords). */
+.t-stream-w {
+  opacity: 0;
+  filter: blur(var(--stream-blur));
+  transition:
+    opacity var(--stream-fade) var(--stream-ease),
+    filter var(--stream-fade) var(--stream-ease);
+}
+.t-stream-w.is-in {
+  opacity: 1;
+  filter: blur(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-stream-w { transition: none !important; filter: none !important; opacity: 1 !important; }
+}
+
+/* transitions.dev "Toggle": data-on drives the thumb; .is-init after the first click. */
+.t-toggle { transition: background var(--toggle-track) var(--toggle-ease); }
+.t-toggle-thumb { translate: 0 0; will-change: translate; }
+.t-toggle[data-on="true"] .t-toggle-thumb { translate: var(--toggle-travel) 0; }
+.t-toggle.is-init[data-on="true"] .t-toggle-thumb { animation: t-toggle-on var(--toggle-dur) var(--toggle-ease) both; }
+.t-toggle.is-init[data-on="false"] .t-toggle-thumb { animation: t-toggle-off var(--toggle-dur) var(--toggle-ease) both; }
+@keyframes t-toggle-on {
+  0% { translate: 0 0; }
+  55% { translate: calc(var(--toggle-travel) + var(--toggle-ov1)) 0; }
+  80% { translate: calc(var(--toggle-travel) - var(--toggle-ov2)) 0; }
+  100% { translate: var(--toggle-travel) 0; }
+}
+@keyframes t-toggle-off {
+  0% { translate: var(--toggle-travel) 0; }
+  55% { translate: calc(0px - var(--toggle-ov1)) 0; }
+  80% { translate: var(--toggle-ov2) 0; }
+  100% { translate: 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-toggle-thumb { animation: none !important; }
+}
+
+/* transitions.dev "Modal open / close": state via .is-open / .is-closing (useModal). */
+.t-modal {
+  transform-origin: center;
+  transform: scale(var(--modal-scale));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--modal-open-dur) var(--modal-ease),
+    opacity   var(--modal-open-dur) var(--modal-ease);
+  will-change: transform, opacity;
+}
+.t-modal.is-open {
+  transform: scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+.t-modal.is-closing {
+  transform: scale(var(--modal-scale-close));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--modal-close-dur) var(--modal-ease),
+    opacity   var(--modal-close-dur) var(--modal-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-modal { transition: none !important; }
+}
+
+/* transitions.dev "Accordion expand": toggle data-open on .t-acc (<Accordion>). */
+.t-acc-panel {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--acc-collapse) var(--acc-ease);
+}
+.t-acc[data-open="true"] > .t-acc-panel {
+  grid-template-rows: 1fr;
+  transition: grid-template-rows var(--acc-expand) var(--acc-ease);
+}
+.t-acc-panel-inner {
+  overflow: hidden;
+  opacity: 0;
+  filter: blur(2px);
+  transition:
+    opacity var(--acc-collapse) var(--acc-ease),
+    filter var(--acc-collapse) var(--acc-ease);
+}
+.t-acc[data-open="true"] > .t-acc-panel > .t-acc-panel-inner {
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity var(--acc-expand) var(--acc-ease),
+    filter var(--acc-expand) var(--acc-ease);
+}
+.t-acc-chevron {
+  display: inline-flex;
+  transform: scaleY(1);
+  transform-origin: center;
+  transition: transform var(--acc-chevron) var(--acc-ease);
+}
+.t-acc-chevron path { vector-effect: non-scaling-stroke; }
+.t-acc[data-open="true"] > :not(.t-acc-panel) .t-acc-chevron {
+  transform: scaleY(-1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-acc-panel, .t-acc-panel-inner, .t-acc-chevron {
+    transition: none !important;
+  }
+}
+
+/* transitions.dev "Number pop-in" (<PopNumber>). */
+@keyframes t-digit-pop-in {
+  0%   {
+    transform: translate(
+      calc(var(--digit-distance) * var(--digit-dir-x)),
+      calc(var(--digit-distance) * var(--digit-dir-y))
+    );
+    opacity: 0;
+    filter: blur(var(--digit-blur));
+  }
+  100% { transform: translate(0, 0); opacity: 1; filter: blur(0); }
+}
+.t-digit-group {
+  display: inline-flex;
+  align-items: baseline;
+}
+.t-digit {
+  display: inline-block;
+  will-change: transform, opacity, filter;
+}
+.t-digit-group.is-animating .t-digit {
+  animation: t-digit-pop-in var(--digit-dur) var(--digit-ease) both;
+}
+.t-digit-group.is-animating .t-digit[data-stagger="1"] {
+  animation-delay: var(--digit-stagger);
+}
+.t-digit-group.is-animating .t-digit[data-stagger="2"] {
+  animation-delay: calc(var(--digit-stagger) * 2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-digit-group .t-digit { animation: none !important; }
+}
+
+/* transitions.dev "Text states swap" (<SwapText>). */
+.t-text-swap {
+  display: inline-block;
+  transform: translateY(0);
+  filter: blur(0);
+  opacity: 1;
+  transition:
+    transform var(--text-swap-dur) var(--text-swap-ease),
+    filter    var(--text-swap-dur) var(--text-swap-ease),
+    opacity   var(--text-swap-dur) var(--text-swap-ease);
+  will-change: transform, filter, opacity;
+}
+.t-text-swap.is-exit {
+  transform: translateY(calc(var(--text-swap-translate-y) * -1));
+  filter: blur(var(--text-swap-blur));
+  opacity: 0;
+}
+.t-text-swap.is-enter-start {
+  transform: translateY(var(--text-swap-translate-y));
+  filter: blur(var(--text-swap-blur));
+  opacity: 0;
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-text-swap { transition: none !important; }
+}
+
+/* transitions.dev "Tooltip open/close" (<TooltipLayer>, triggers carry data-tooltip). */
+.t-tt-group {
+  position: relative;
+  display: inline-flex;
+}
+.t-tt {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0;                 /* the JS writes the measured width */
+  overflow: hidden;
+  /* Individual transform properties: the travel (translate) and the
+     appear (scale) run on their own clocks. */
+  translate: var(--tt-x, 0px) 0;
+  scale: var(--tt-scale);
+  transform-origin: 50% 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--tt-bg);
+  color: var(--tt-fg);
+  white-space: nowrap;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 2px 6px 0 rgba(0, 0, 0, 0.05),
+    0 4px 42px 0 rgba(0, 0, 0, 0.06);
+  opacity: 0;
+  pointer-events: none;
+  /* Default rule controls the LEAVE state: no delay, so hiding plays
+     immediately. The move lanes are always live. */
+  transition:
+    opacity   var(--tt-out-dur) var(--tt-out-ease),
+    scale     var(--tt-out-dur) var(--tt-out-ease),
+    translate var(--tt-move-dur) var(--tt-move-ease),
+    width     var(--tt-move-dur) var(--tt-move-ease);
+}
+/* The appear delay belongs ONLY to the show rule, so hiding snaps it
+   back to 0. A retarget while showing carries no delay at all. */
+.t-tt[data-show="true"] {
+  opacity: 1;
+  scale: 1;
+  transition:
+    opacity   var(--tt-in-dur) var(--tt-in-ease) var(--tt-delay),
+    scale     var(--tt-in-dur) var(--tt-in-ease) var(--tt-delay),
+    translate var(--tt-move-dur) var(--tt-move-ease),
+    width     var(--tt-move-dur) var(--tt-move-ease);
+}
+.t-tt-text { white-space: nowrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .t-tt { transition: none !important; }
+}
+/* The app has one tooltip for the whole page: fixed, and placed in 2D (above, or right of the rail). */
+.t-tt.is-global {
+  position: fixed;
+  top: 0;
+  bottom: auto;
+  z-index: 100;
+  translate: var(--tt-x, 0px) var(--tt-y, 0px);
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 16px;
+}
+.t-tt.is-global[data-side="right"] {
+  transform-origin: 0% 50%;
+}
+
+/* transitions.dev "Tabs sliding" (<SlidingTabs>). */
+.t-tabs {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 48px;
+  background: var(--tabs-bar-bg);
+}
+.t-tab {
+  position: relative;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  height: 30px;
+  padding: 4px 12px;
+  color: var(--tabs-text-muted);
+  cursor: pointer;
+  border-radius: 48px;
+  z-index: 1;
+  transition: color var(--tabs-dur) var(--tabs-ease);
+}
+.t-tab:not([aria-selected="true"]):hover,
+.t-tab[aria-selected="true"] {
+  color: var(--tabs-text-active);
+}
+.t-tabs-pill {
+  position: absolute;
+  top: 3px;
+  left: 0;
+  height: 30px;
+  width: 0;
+  background: var(--tabs-pill-bg);
+  border-radius: 48px;
+  transform: translateX(0);
+  transition:
+    transform var(--tabs-dur) var(--tabs-ease),
+    width     var(--tabs-dur) var(--tabs-ease);
+  will-change: transform, width;
+  z-index: 0;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-tabs-pill, .t-tab { transition: none !important; }
+}
+
+/* transitions.dev "Skeleton loader and reveal" (<SkeletonReveal>). */
+.t-skel { position: relative; }
+.t-skel-skeleton,
+.t-skel-content {
+  position: absolute;
+  inset: 0;
+}
+.t-skel-skeleton {
+  z-index: 1;
+  opacity: 1;
+  filter: blur(0);
+  transition:
+    opacity var(--reveal-dur) var(--reveal-ease),
+    filter  var(--reveal-dur) var(--reveal-ease);
+}
+.t-skel-content {
+  z-index: 2;
+  opacity: 0;
+  filter: blur(var(--reveal-blur));
+  transition:
+    opacity var(--reveal-dur) var(--reveal-ease),
+    filter  var(--reveal-dur) var(--reveal-ease);
+}
+.t-skel.is-revealed .t-skel-skeleton {
+  opacity: 0;
+  filter: blur(var(--reveal-blur));
+}
+.t-skel.is-revealed .t-skel-content {
+  opacity: 1;
+  filter: blur(0);
+}
+.t-skel.is-resetting .t-skel-skeleton,
+.t-skel.is-resetting .t-skel-content {
+  transition: none !important;
+}
+.t-skel-skeleton.is-pulsing > * {
+  animation: t-skel-pulse var(--pulse-dur) ease-in-out var(--pulse-count);
+}
+@keyframes t-skel-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: var(--pulse-min); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-skel-skeleton, .t-skel-content {
+    transition: none !important;
+  }
+  .t-skel-skeleton.is-pulsing > * { animation: none !important; }
+}
+
+/* transitions.dev "Error state shake" (useErrorShake). */
+.t-input {
+  transition: border-color 150ms ease-out;
+  will-change: transform;
+}
+.t-input.is-error {
+  transition: border-color var(--revert-dur, 280ms) ease-out;
+}
+.t-error-msg {
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity    var(--revert-dur, 280ms) ease-out,
+    visibility 0s linear var(--revert-dur, 280ms);
+}
+.t-input-wrap.is-error .t-error-msg {
+  opacity: 1;
+  visibility: visible;
+  transition:
+    opacity    var(--revert-dur, 280ms) ease-out,
+    visibility 0s linear 0s;
+}
+.t-input.is-shaking {
+  animation: t-input-shake calc(
+      var(--shake-dur-a) * 2 + var(--shake-dur-b) * 2
+    ) linear;
+}
+@keyframes t-input-shake {
+  0%      { transform: translateX(0);                                 animation-timing-function: var(--shake-ease); }
+  28.57%  { transform: translateX(var(--shake-distance));             animation-timing-function: var(--shake-ease); }
+  57.14%  { transform: translateX(calc(var(--shake-distance) * -1)); animation-timing-function: var(--shake-ease); }
+  78.57%  { transform: translateX(var(--shake-overshoot));            animation-timing-function: var(--shake-ease); }
+  100%    { transform: translateX(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-input { animation: none !important; transform: none !important; }
+}
+
+/* transitions.dev "Success check" (<SuccessCheck>). */
+.t-success-check {
+  display: inline-block;
+  transform-origin: center;
+  opacity: 0;
+  will-change: transform, opacity, filter;
+}
+.t-success-check svg { display: block; overflow: visible; }
+/* stroke-dasharray = the check path's getTotalLength() (10.27), rounded up. */
+.t-success-check svg path {
+  stroke-dasharray: 12;
+  stroke-dashoffset: 12;
+}
+.t-success-check[data-state="in"] {
+  animation:
+    t-check-fade   var(--check-opacity-dur) var(--check-ease-opacity) forwards,
+    t-check-rotate var(--check-rotate-dur)  var(--check-ease-rotate)  forwards,
+    t-check-blur   var(--check-blur-dur)    var(--check-ease-out)     forwards,
+    t-check-bob    var(--check-bob-dur)     var(--check-ease-bob)     forwards;
+}
+.t-success-check[data-state="in"] svg path {
+  animation: t-check-draw var(--check-path-dur) var(--check-ease-path) var(--check-path-delay, 0ms) forwards;
+}
+@keyframes t-check-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes t-check-rotate {
+  from { transform: rotate(var(--check-rotate-from)); }
+  to   { transform: rotate(0deg); }
+}
+@keyframes t-check-blur {
+  from { filter: blur(var(--check-blur-from)); }
+  to   { filter: blur(0); }
+}
+@keyframes t-check-bob {
+  from { translate: 0 var(--check-y-amount); }
+  to   { translate: 0 0; }
+}
+@keyframes t-check-draw { to { stroke-dashoffset: 0; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .t-success-check { animation: none !important; opacity: 1; }
+  .t-success-check svg path { animation: none !important; stroke-dashoffset: 0 !important; }
+}
+
+/* transitions.dev "Texts reveal" (<TextsReveal>). */
+.t-stagger-line {
+  display: block;
+  opacity: 0;
+  transform: translateY(var(--stagger-distance));
+  filter: blur(var(--stagger-blur));
+  transition:
+    opacity   var(--stagger-dur) var(--stagger-ease),
+    transform var(--stagger-dur) var(--stagger-ease),
+    filter    var(--stagger-dur) var(--stagger-ease);
+  will-change: transform, opacity, filter;
+}
+.t-stagger-line--2 { transition-delay: var(--stagger-stagger); }
+.t-stagger-line--3 { transition-delay: calc(var(--stagger-stagger) * 2); }
+.t-stagger.is-shown .t-stagger-line {
+  opacity: 1;
+  transform: translateY(0);
+  filter: blur(0);
+}
+.t-stagger.is-hiding .t-stagger-line {
+  opacity: 0;
+  transform: translateY(0);
+  filter: blur(0);
+  transition:
+    opacity 200ms ease,
+    transform 0s linear,
+    filter 0s linear;
+  transition-delay: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-stagger-line { transition: none !important; }
+}
+
+/* transitions.dev "Card resize". */
+.t-resize {
+  transition:
+    width  var(--resize-dur) var(--resize-ease),
+    height var(--resize-dur) var(--resize-ease);
+  will-change: width, height;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-resize { transition: none !important; }
+}
+
+/* transitions.dev "Menu dropdown": grows from its trigger (data-origin); state via .is-open / .is-closing (useDropdown). */
+.t-dropdown {
+  transform-origin: top left;
+  transform: scale(var(--dropdown-pre-scale));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--dropdown-open-dur) var(--dropdown-ease),
+    opacity   var(--dropdown-open-dur) var(--dropdown-ease);
+  will-change: transform, opacity;
+}
+.t-dropdown[data-origin="top-right"]     { transform-origin: top right; }
+.t-dropdown[data-origin="top-center"]    { transform-origin: top center; }
+.t-dropdown[data-origin="bottom-left"]   { transform-origin: bottom left; }
+.t-dropdown[data-origin="bottom-center"] { transform-origin: bottom center; }
+.t-dropdown[data-origin="bottom-right"]  { transform-origin: bottom right; }
+
+.t-dropdown.is-open {
+  transform: scale(1);
+  opacity: 1;
+  pointer-events: auto;
+}
+.t-dropdown.is-closing {
+  transform: scale(var(--dropdown-closing-scale));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--dropdown-close-dur) var(--dropdown-ease),
+    opacity   var(--dropdown-close-dur) var(--dropdown-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-dropdown { transition: none !important; }
 }
 .dd-item {
   display: flex;
@@ -913,6 +2045,20 @@ pre {
   border-radius: 4px;
   padding: 0 5px;
 }
+.dd-foot {
+  border-top: 1px solid var(--border);
+  margin-top: 4px;
+  padding: 6px 8px 2px;
+  font-size: 11.5px;
+  color: var(--text);
+}
+.dd-foot kbd {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 0 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+}
 .dd-empty {
   padding: 8px;
   color: var(--muted);
@@ -921,13 +2067,25 @@ pre {
 
 /* ---------- thread panel ---------- */
 .thread-panel {
-  width: 420px;
+  width: 0;
   flex: none;
   border-left: 1px solid var(--border);
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+  --panel-w: 420px;
+}
+.thread-panel.is-open {
+  width: var(--panel-w);
+}
+/* Fixed width, so the contents never reflow while the column opens or closes. */
+.thread-panel-inner {
+  width: calc(var(--panel-w) - 1px); /* inside the 1px border */
+  height: 100%;
   display: flex;
   flex-direction: column;
   min-height: 0;
-  background: var(--bg);
+  --panel-translate-x: 32px;
 }
 .thread-panel .conv-head h2 {
   font-size: 15px;
@@ -940,26 +2098,67 @@ pre {
   padding: 6px 10px;
   font-size: 13px;
 }
-.quote.collapsed .quote-body {
-  max-height: 3.2em;
+.quote-clip {
   overflow: hidden;
+}
+.quote.collapsed .quote-clip {
   mask-image: linear-gradient(to bottom, black 50%, transparent);
+}
+/* Top of a channel made from a side thread. */
+.origin-card {
+  margin: 14px 18px 6px;
+}
+.origin-card .quote-clip {
+  transition: max-height 250ms var(--panel-ease);
+}
+.origin-card .quote-head .link {
+  color: var(--accent);
+}
+/* Above a long thread's composer: offer to turn it into a channel. */
+.promote-nudge {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 14px 8px;
+  padding: 6px 6px 6px 10px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: var(--bg-soft);
+  font-size: 12.5px;
+  animation: promote-nudge-in 300ms var(--panel-ease);
+}
+@keyframes promote-nudge-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .promote-nudge {
+    animation: none;
+  }
+}
+.promote-facts {
+  margin: 0 0 12px;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.6;
 }
 .quote-head {
   display: flex;
+  gap: 6px;
   justify-content: space-between;
   font-size: 11.5px;
   color: var(--muted);
   margin-bottom: 2px;
 }
 .thread-panel .msg {
-  grid-template-columns: 28px minmax(0, 1fr);
-  padding: 6px 14px;
+  padding: 6px 14px 6px 36px;
 }
-.thread-panel .avatar {
-  width: 26px;
-  height: 26px;
-  font-size: 11px;
+.floating-thread-btn .count {
+  font-weight: 400;
+  opacity: 0.75;
 }
 .floating-thread-btn {
   position: fixed;
@@ -1120,14 +2319,14 @@ details.step-prompt pre {
 
 @media (max-width: 900px) {
   .app {
-    grid-template-columns: 200px minmax(0, 1fr);
+    --side-open-w: 200px;
   }
   .thread-panel {
     position: fixed;
     right: 0;
     top: 0;
     bottom: 0;
-    width: min(420px, 100vw);
+    --panel-w: min(420px, 100vw);
     z-index: 40;
     box-shadow: var(--shadow);
   }
@@ -1136,9 +2335,6 @@ details.step-prompt pre {
 .message-list {
   display: flex;
   flex-direction: column;
-}
-.msg-content {
-  min-width: 0;
 }
 .inline-input {
   border: 1px solid var(--border-strong);

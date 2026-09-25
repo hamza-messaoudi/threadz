@@ -20,6 +20,18 @@ export interface ToolEvent {
   output_preview?: string;
   denied?: boolean;
   is_error?: boolean;
+  /** Length of the message text when the call began; absent on older messages. */
+  at?: number;
+  /** Orders steps that began at the same `at`. */
+  seq?: number;
+}
+
+/** A thinking summary, placed like a tool call. */
+export interface ThinkingEvent {
+  id: string;
+  text: string;
+  at: number;
+  seq?: number;
 }
 
 export interface Usage {
@@ -32,7 +44,8 @@ export interface Usage {
 }
 
 export interface Mention {
-  kind: 'agent' | 'workflow' | 'dir';
+  /** `dir` references a directory for one message; `cd` moves the thread into it. */
+  kind: 'agent' | 'workflow' | 'dir' | 'cd';
   id: string;
   start: number;
   end: number;
@@ -45,6 +58,7 @@ export interface Message {
   authorId: string | null;
   content: string;
   toolEvents: ToolEvent[];
+  thinking?: ThinkingEvent[];
   status: 'queued' | 'streaming' | 'done' | 'error' | 'cancelled';
   error: string | null;
   usage: Usage | null;
@@ -75,15 +89,32 @@ export interface ThreadInfo {
   parentThreadId: string | null;
   parentMessageId: string | null;
   blockIndex: number | null;
+  /** Last quoted block (inclusive); equals blockIndex for a one-paragraph thread. */
+  blockEnd: number | null;
   blockText: string | null;
+  /** Where the thread's turns run now. */
+  cwd: string;
+  /** True after a move away from the default directory. */
+  moved: boolean;
 }
 
 export interface ChildThread {
   id: string;
   parentMessageId: string;
   blockIndex: number;
+  blockEnd: number;
   replyCount: number;
   lastActivity: number;
+  /** Set once the thread became its own channel. */
+  channel: { id: string; name: string } | null;
+}
+
+/** Where a channel made from a side thread came from. */
+export interface ThreadOrigin {
+  threadId: string;
+  conversationId: string;
+  conversationName: string;
+  conversationKind: ConversationKind;
 }
 
 export interface ThreadData {
@@ -92,6 +123,7 @@ export interface ThreadData {
   childThreads: ChildThread[];
   runs?: Record<string, Run>;
   sourceMessage?: Message | null;
+  origin?: ThreadOrigin | null;
 }
 
 export interface AgentInfo {
