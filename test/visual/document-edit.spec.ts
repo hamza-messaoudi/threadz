@@ -46,7 +46,11 @@ const sizes = [
 for (const size of sizes)
   for (const scheme of ['light', 'dark'] as const) {
     test(`edit a document · ${size.name} ${scheme}`, async ({ page }) => {
-      const shot = (step: string) => page.screenshot({ path: `test-results/doc-edit/${size.name}-${scheme}-${step}.png` });
+      // After the header's text swap (150 ms) has settled.
+      const shot = async (step: string) => {
+        await page.waitForTimeout(300);
+        await page.screenshot({ path: `test-results/doc-edit/${size.name}-${scheme}-${step}.png` });
+      };
       await page.setViewportSize({ width: size.width, height: size.height });
       await page.emulateMedia({ colorScheme: scheme, reducedMotion: 'reduce' });
       const { doc } = await channelWithDocument(page, `edit-${size.name}-${scheme}`);
@@ -82,7 +86,7 @@ for (const size of sizes)
       await page.goto(`${new URL(page.url()).pathname}?thread=${thread.id}`);
       await expect(page.locator('.thread-panel .edit-result')).toContainText('Edited rollout.md · version 3');
       await expect(page.locator('.thread-panel .quote-anchor')).toContainText('Version 3 changed this passage');
-      await page.waitForTimeout(500); // the panel's reveal
+      await page.waitForTimeout(200); // the panel's reveal
       await shot('5-thread');
       await page.goto(new URL(page.url()).pathname);
       await page.locator('.msg.doc [data-block]').first().waitFor();
