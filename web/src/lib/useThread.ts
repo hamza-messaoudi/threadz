@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer } from 'react';
 import { api, type ChildThread, type Message, type Run, type ThreadData } from './api.ts';
+import { turnSettled } from './sound.ts';
 import { useSse } from './sse.ts';
 
 export interface ThreadState {
@@ -111,6 +112,7 @@ export function useThread(threadId: string | null) {
     threadId ? `/api/threads/${threadId}/events` : null,
     (event, d) => {
       if (event === 'message.created' || event === 'message.updated' || event === 'message.done') dispatch({ type: 'upsert', message: d });
+      if (event === 'message.done') turnSettled(d);
       else if (event === 'message.delta') dispatch({ type: 'delta', id: d.id, text: d.text });
       else if (event === 'message.tool') dispatch({ type: 'tool', id: d.id, toolEvents: d.toolEvents });
       else if (event === 'message.thinking') dispatch({ type: 'thinking', id: d.id, thinkingId: d.thinkingId, at: d.at, seq: d.seq, text: d.text });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api, type Conversation, type DirResult, type Mention } from '../lib/api.ts';
 import { createDir, createFirst, createOptions, tildify, type CreateOption } from '../lib/dirs.ts';
+import { play } from '../lib/sound.ts';
 import { agentColor, useAppData } from '../lib/store.tsx';
 import { useDropdown } from '../lib/useDropdown.ts';
 import { useErrorShake } from './transitions.tsx';
@@ -278,6 +279,7 @@ export function Composer({ draftKey, conversation, defaultAgent, cwd, placeholde
         value.text.trim(),
         value.mentions.map((m) => ({ ...m, start: m.start - lead, end: m.end - lead })),
       );
+      play('sent');
       saveDraft(`last:${draftKey}`, value);
       saveDraft(`draft:${draftKey}`, null);
       ref.current!.innerHTML = '';

@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api.ts';
+import { playFromGesture, useSoundSettings } from '../lib/sound.ts';
 import { useAppData } from '../lib/store.tsx';
 import { useTheme, type ThemeSetting } from '../lib/useTheme.ts';
 import { SlidingTabs } from './transitions.tsx';
@@ -51,6 +52,7 @@ export function Settings() {
       </p>
 
       <ThemeSwitch />
+      <SoundSetting />
 
       <p>
         <button className="btn small" onClick={async () => { const r = await api.post<{ count: number }>('/api/dirs/rescan'); alert(`Directory index: ${r.count} projects found.`); }}>
@@ -190,5 +192,52 @@ function ThemeSwitch() {
         </span>
       </span>
     </p>
+  );
+}
+
+function SoundSetting() {
+  const [sound, setSound] = useSoundSettings();
+  const preview = useRef<ReturnType<typeof setTimeout>>(undefined);
+  // Hear the new level once the slider settles, not on every step of the drag.
+  const setVolume = (volume: number) => {
+    setSound({ volume });
+    clearTimeout(preview.current);
+    preview.current = setTimeout(() => playFromGesture('reply'), 150);
+  };
+  useEffect(() => () => clearTimeout(preview.current), []);
+  return (
+    <>
+      <p className="row gap sound-setting">
+        <span>Sounds</span>
+        <SlidingTabs<'off' | 'on'>
+          label="Sounds"
+          value={sound.on ? 'on' : 'off'}
+          onChange={(v) => {
+            setSound({ on: v === 'on' });
+            if (v === 'on') playFromGesture('on');
+          }}
+          options={[
+            { value: 'off', label: 'Off' },
+            { value: 'on', label: 'On' },
+          ]}
+        />
+        <label className="row gap sound-volume" data-off={!sound.on || undefined}>
+          <span className="muted">Volume</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            step={5}
+            value={Math.round(sound.volume * 100)}
+            disabled={!sound.on}
+            aria-label="Sound volume"
+            onChange={(e) => setVolume(Number(e.target.value) / 100)}
+            aria-valuetext={`${Math.round(sound.volume * 100)}%`}
+          />
+          <span className="sound-volume-value">{Math.round(sound.volume * 100)}%</span>
+        </label>
+      </p>
+      <p className="muted">Short retro cues when a message is sent, an agent answers, a thread opens or something fails. Off by default when your system asks for reduced motion.</p>
+    </>
   );
 }
