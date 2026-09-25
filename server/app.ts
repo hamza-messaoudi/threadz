@@ -8,7 +8,7 @@ import { COOKIE, guard, loadOrCreateToken, tokenEquals } from './auth.ts';
 import { loadConfig } from './config/load.ts';
 import type { LoadedConfig } from './config/types.ts';
 import { watchConfig } from './config/watch.ts';
-import { defaultAgent, HttpError, moveThread, postUserMessage, threadCwd } from './core/dispatch.ts';
+import { defaultAgent, HttpError, moveThread, postDocument, postUserMessage, threadCwd } from './core/dispatch.ts';
 import { openPassage, resetThread } from './core/passages.ts';
 import { serializeConversation, serializeMessage, serializeRun } from './core/serialize.ts';
 import { openDb } from './db/migrate.ts';
@@ -19,6 +19,7 @@ import { TurnRunner } from './runner/turn.ts';
 import { compileGate, writeGate } from './gate/compile.ts';
 import { classifyInventory, readToolList } from './gate/inventory.ts';
 import { blocksOf } from './context/blocks.ts';
+import { documentMeta } from './context/documents.ts';
 import { DirIndex } from './dirs/index.ts';
 import { WorkflowEngine } from './core/workflows.ts';
 import { Scheduler } from './scheduler/scheduler.ts';
@@ -257,7 +258,7 @@ export function createApp(opts: AppOptions = {}) {
           .filter((r) => !!r)
           .map((r) => [r!.id, serializeRun(r!)]),
       ),
-      sourceMessage: thread.parent_message_id ? serializeMessage(store.getMessage(thread.parent_message_id)!) : null,
+      sourceMessage: thread.parent_message_id ? serializeSource(store.getMessage(thread.parent_message_id)!) : null,
       childThreads: store.childThreadSummaries(thread.id).map(serializeChildThread),
       origin: originOf(thread),
     });
@@ -313,6 +314,14 @@ export function createApp(opts: AppOptions = {}) {
   app.post('/api/threads/:id/messages', async (c) => {
     const body = await c.req.json();
     return c.json(postUserMessage(ctx, c.req.param('id'), body), 201);
+  });
+
+  // Shares a Markdown document in the thread: { name: "spec.md", content }.
+  app.post('/api/threads/:id/documents', async (c) => {
+    const body = await c.req.json();
+    const doc = postDocument(ctx, c.req.param('id'), body);
+    blocksCached(doc.id, doc.content).catch(() => {}); // the first thread on it needs its blocks
+    return c.json(doc, 201);
   });
 
   app.post('/api/runs/:id/retry', (c) => {
@@ -385,7 +394,7 @@ export function createApp(opts: AppOptions = {}) {
     if (parent.parent_thread_id) return c.json({ error: 'threads cannot be nested' }, 400);
     let blocks: string[];
     try {
-      blocks = await blocksOf(msg.content_md);
+      blocks = await blocksCached(msg.id, msg.content_md);
     } catch {
       return c.json({ error: 'could not parse this message' }, 400);
     }
@@ -479,6 +488,32 @@ export function createApp(opts: AppOptions = {}) {
   });
 
   return { app, ctx };
+}
+
+/** A thread's source message. A document's text is left out: the thread only needs its name. */
+function serializeSource(m: MessageRow) {
+  const out = serializeMessage(m);
+  return documentMeta(m) ? { ...out, content: '' } : out;
+}
+
+/**
+ * Finished messages never change, so their blocks are split once. A long document takes a while to
+ * split (every block is parsed twice) and every thread opened on it needs the split.
+ */
+const blockCache = new Map<string, Promise<string[]>>();
+function blocksCached(id: string, content: string): Promise<string[]> {
+  const key = `${id}:${content.length}`;
+  let hit = blockCache.get(key);
+  if (hit) {
+    blockCache.delete(key);
+    blockCache.set(key, hit);
+    return hit;
+  }
+  hit = blocksOf(content);
+  hit.catch(() => blockCache.delete(key));
+  blockCache.set(key, hit);
+  if (blockCache.size > 32) blockCache.delete(blockCache.keys().next().value!);
+  return hit;
 }
 
 function serializeChildThread(t: ReturnType<Store['childThreadSummaries']>[number]) {

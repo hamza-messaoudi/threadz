@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { ConversationView } from './components/ConversationView.tsx';
 import { ProblemsBanner } from './components/ProblemsBanner.tsx';
 import { SearchPalette } from './components/SearchPalette.tsx';
@@ -8,7 +8,7 @@ import { TooltipLayer } from './components/TooltipLayer.tsx';
 import { TextsReveal } from './components/transitions.tsx';
 import { navigate, useRoute } from './lib/router.ts';
 import { AppDataProvider, useAppData } from './lib/store.tsx';
-import { narrowScreen, useSidebarCollapsed } from './lib/useSidebar.ts';
+import { narrowScreen, SidebarContext, useSidebarCollapsed } from './lib/useSidebar.ts';
 import { useTheme } from './lib/useTheme.ts';
 
 // Not linked from the UI; loaded only when /dev/markdown is opened.
@@ -26,7 +26,18 @@ function Shell() {
   const route = useRoute();
   const { conversations } = useAppData();
   const [modal, setModal] = useState<null | 'search' | 'new-channel'>(null);
-  const [collapsed, setCollapsed] = useSidebarCollapsed();
+  const [chosen, setCollapsed] = useSidebarCollapsed();
+  // A pane that took the sidebar's space (a document's contents) holds it on the rail meanwhile.
+  const [borrowed, setBorrowed] = useState(false);
+  const collapsed = chosen || borrowed;
+  const toggleSidebar = () => {
+    if (borrowed) {
+      setBorrowed(false);
+      setCollapsed(false);
+    } else setCollapsed((c) => !c);
+  };
+  const toggleRef = useRef(toggleSidebar);
+  toggleRef.current = toggleSidebar;
   useTheme(); // keeps .dark in sync with the OS while the setting is "system"
 
   // Ctrl/Cmd+K opens search; Ctrl/Cmd+B or Ctrl/Cmd+\ collapses the sidebar to a rail.
@@ -39,7 +50,7 @@ function Shell() {
         setModal((m) => (m === 'search' ? null : 'search'));
       } else if (key === 'b' || key === '\\') {
         e.preventDefault();
-        setCollapsed((c) => !c);
+        toggleRef.current();
       }
     };
     window.addEventListener('keydown', on);
@@ -51,32 +62,35 @@ function Shell() {
     if (narrowScreen()) setCollapsed(true);
   }, [route.view, route.conversationId]);
 
+  const sidebar = useMemo(() => ({ collapsed, borrow: setBorrowed }), [collapsed]);
   const conversation = route.conversationId ? conversations.find((c) => c.id === route.conversationId) : undefined;
 
   return (
     <div className={`app ${collapsed ? 'side-collapsed' : ''}`}>
       <Sidebar
         collapsed={collapsed}
-        onToggle={() => setCollapsed((c) => !c)}
+        onToggle={toggleSidebar}
         activeId={route.conversationId}
         onSearch={() => setModal('search')}
         newChannelOpen={modal === 'new-channel'}
         setNewChannelOpen={(o) => setModal(o ? 'new-channel' : null)}
       />
-      <main className="main">
-        <ProblemsBanner />
-        {route.view === 'conversation' && route.conversationId ? (
-          <ConversationView key={route.conversationId} conversationId={route.conversationId} conversation={conversation} route={route} />
-        ) : route.view === 'settings' ? (
-          <Settings />
-        ) : route.view === 'dev-markdown' ? (
-          <Suspense fallback={null}>
-            <StyleLab />
-          </Suspense>
-        ) : (
-          <Home onNewChannel={() => setModal('new-channel')} />
-        )}
-      </main>
+      <SidebarContext.Provider value={sidebar}>
+        <main className="main">
+          <ProblemsBanner />
+          {route.view === 'conversation' && route.conversationId ? (
+            <ConversationView key={route.conversationId} conversationId={route.conversationId} conversation={conversation} route={route} />
+          ) : route.view === 'settings' ? (
+            <Settings />
+          ) : route.view === 'dev-markdown' ? (
+            <Suspense fallback={null}>
+              <StyleLab />
+            </Suspense>
+          ) : (
+            <Home onNewChannel={() => setModal('new-channel')} />
+          )}
+        </main>
+      </SidebarContext.Provider>
       {modal === 'search' && <SearchPalette onClose={() => setModal(null)} />}
       <TooltipLayer />
     </div>

@@ -2922,3 +2922,645 @@ details.step-prompt pre {
   max-width: 100%;
 }
 }
+
+/* ---------- shared documents ---------- */
+@layer chrome {
+:root {
+  /* transitions.dev "Page side-by-side" tokens: a far jump in a document, a thread reached with previous / next. */
+  --page-slide-dur: 250ms;
+  --page-slide-distance: 8px;
+  --page-blur: 3px;
+  --page-slide-ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* A document reads on the page like an agent's reply, with room in the gutter for the thread buttons. */
+.msg.doc {
+  padding: 0 18px 10px 44px;
+  margin: 6px 0;
+}
+/* Sticks while the document is on screen, and leaves with it. */
+.doc-head {
+  position: sticky;
+  top: -12px; /* the scroller's top padding */
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 52px;
+  margin: 0 -18px 4px -44px;
+  padding: 8px 12px 8px 44px;
+  background: var(--bg);
+  transition: box-shadow 150ms ease-out;
+}
+.doc-head[data-stuck='true'] {
+  box-shadow: 0 1px 0 var(--border), 0 8px 16px -14px rgba(20, 20, 40, 0.28);
+}
+:root.dark .doc-head[data-stuck='true'] {
+  box-shadow: 0 1px 0 var(--border), 0 8px 16px -12px rgba(0, 0, 0, 0.7);
+}
+.doc-icon {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  translate: 0 -50%;
+  display: flex;
+  color: var(--accent);
+}
+.doc-title {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  gap: 1px;
+}
+.doc-name {
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doc-sub {
+  font-size: 12px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.doc-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.doc-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 7px;
+  border-radius: 7px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out,
+    scale 150ms ease-out;
+}
+.doc-btn:hover,
+.doc-btn.on {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.doc-btn:active {
+  scale: 0.96;
+}
+.doc-threads-btn {
+  color: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .doc-btn:active {
+    scale: none;
+  }
+}
+/* Reading progress along the header's lower edge, with a tick where each thread's passage is. */
+.doc-track {
+  position: absolute;
+  left: 44px;
+  right: 18px;
+  bottom: -1px;
+  height: 2px;
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+  pointer-events: none;
+}
+.doc-head[data-stuck='true'] .doc-track {
+  opacity: 1;
+  pointer-events: auto;
+}
+.doc-progress {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  transform-origin: left;
+  transform: scaleX(0);
+  border-radius: 2px;
+}
+.doc-tick {
+  position: absolute;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  margin-left: -3.5px;
+  translate: 0 -50%;
+  border-radius: 999px;
+  background: var(--bg);
+  box-shadow: 0 0 0 1.5px var(--accent);
+  transition: scale 150ms ease-out;
+}
+/* A 20px target around a 7px dot; neighbours are rarely closer than that. */
+.doc-tick::after {
+  content: '';
+  position: absolute;
+  inset: -7px -6px;
+}
+.doc-tick:hover,
+.doc-tick:focus-visible {
+  scale: 1.35;
+  background: var(--accent);
+}
+.doc-menu {
+  position: absolute;
+  top: calc(100% - 2px);
+  right: 12px;
+  width: min(380px, calc(100% - 56px));
+  max-height: min(60vh, 460px);
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow);
+  z-index: 20;
+}
+.doc-menu-title {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+.doc-thread-item .dd-title {
+  font-size: 13px;
+  display: block;
+  text-wrap: pretty;
+}
+/* A document's contents: a pane on the left that takes the sidebar's space (DocContents.tsx). */
+.contents-pane {
+  width: 0;
+  flex: none;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  background: var(--side-bg);
+  --contents-w: 272px;
+}
+.contents-pane.is-open {
+  width: var(--contents-w);
+}
+/* Fixed width, so the headings never reflow while the column opens or closes. */
+.contents-inner {
+  width: calc(var(--contents-w) - 1px);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  --panel-translate-x: -24px;
+}
+.contents-head {
+  gap: 8px;
+  padding: 8px 10px 8px 16px;
+}
+.contents-icon {
+  flex: none;
+  color: var(--accent);
+}
+.contents-title {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.contents-title h2 {
+  font-size: 14px;
+  line-height: 1.2;
+}
+.contents-name {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contents-list {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 8px 24px;
+}
+.contents-item {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 10px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--muted);
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+.contents-item[data-level='1'] {
+  color: var(--text);
+  font-weight: 600;
+}
+.contents-item[data-level='2'] {
+  color: var(--text);
+}
+.contents-item[data-level='2']:not(:first-child) {
+  margin-top: 6px;
+}
+.contents-item[data-level='3'] {
+  padding-left: 22px;
+}
+.contents-item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+/* Where the reader is: accent text and a rail on the left edge. */
+.contents-item.sel {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.contents-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+.contents-item.sel::before {
+  opacity: 1;
+}
+.contents-text {
+  flex: 1;
+  min-width: 0;
+  text-wrap: pretty;
+}
+.contents-threads {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.contents-threads svg {
+  width: 12px;
+  height: 12px;
+}
+@media (max-width: 640px) {
+  /* Phones: the pane slides over the conversation, next to the rail. */
+  .contents-pane {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: var(--rail-w);
+    z-index: 44;
+    --contents-w: min(300px, calc(100vw - var(--rail-w)));
+  }
+  .contents-pane.is-open {
+    box-shadow: var(--shadow);
+  }
+}
+/* Folding animates one screenful (accordion timing); the rest is off screen either way. */
+.doc-fold[data-fold] {
+  overflow: hidden;
+  transition:
+    max-height var(--acc-expand) var(--acc-ease),
+    opacity var(--acc-expand) var(--acc-ease);
+}
+.doc-fold[data-fold='opening'] {
+  animation: doc-fold-in var(--acc-expand) var(--acc-ease);
+}
+.doc-fold[data-fold='closing'] {
+  max-height: 0 !important;
+  opacity: 0;
+  transition-duration: var(--acc-collapse);
+}
+@keyframes doc-fold-in {
+  from {
+    opacity: 0;
+  }
+}
+/* A far jump: the document settles in with a cross-blur rather than a long scroll. */
+.doc-arrive {
+  animation: doc-arrive var(--page-slide-dur) var(--page-slide-ease);
+}
+@keyframes doc-arrive {
+  from {
+    opacity: 0.35;
+    filter: blur(var(--page-blur));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .doc-fold[data-fold],
+  .doc-arrive {
+    animation: none;
+    transition: none;
+  }
+}
+/* Frame corners, labels and copy buttons (z-10) stay under the sticky header as they scroll past it. */
+.doc-body {
+  isolation: isolate;
+}
+/* Chunks of the document; the ones far from the screen are placeholders of their height. */
+.doc-chunk + .doc-chunk {
+  margin-top: 1.25rem;
+}
+.doc-chunk + .doc-chunk[data-lead='h2'] {
+  margin-top: 2.75rem;
+}
+.doc-chunk + .doc-chunk[data-lead='h3'] {
+  margin-top: 2rem;
+}
+/* Only seen in a fast fling: faint lines where the text is about to be. */
+.doc-chunk.is-placeholder {
+  max-width: 68ch;
+  background: repeating-linear-gradient(to bottom, var(--bg-soft) 0 0.7rem, transparent 0.7rem 1.6rem);
+  mask-image: linear-gradient(to right, black 60%, transparent);
+  border-radius: 4px;
+}
+/* The passage a jump landed on, briefly. */
+.block.doc-target {
+  animation: doc-target 1.4s ease-out;
+}
+@keyframes doc-target {
+  0%,
+  25% {
+    background-color: color-mix(in srgb, var(--accent) 10%, transparent);
+  }
+}
+.msg.doc.flash {
+  animation: none;
+}
+.msg.doc.flash .doc-head {
+  animation: flash 1.6s ease-out;
+}
+.doc-end {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 28px 0 4px;
+  font-size: 12px;
+  color: var(--faint);
+}
+.doc-end .promoted-rule {
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+.doc-end .link {
+  color: var(--muted);
+}
+/* Drop a .md file over a conversation. */
+.conv-main {
+  position: relative;
+}
+.doc-drop {
+  position: absolute;
+  inset: 8px;
+  z-index: 35;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px dashed color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(3px);
+  opacity: 0;
+  scale: 0.99;
+  pointer-events: none;
+  transition:
+    opacity var(--modal-close-dur) var(--modal-ease),
+    scale var(--modal-close-dur) var(--modal-ease);
+}
+.doc-drop.is-open {
+  opacity: 1;
+  scale: 1;
+  transition-duration: var(--modal-open-dur);
+}
+.doc-drop.error {
+  border-color: color-mix(in srgb, var(--danger) 55%, transparent);
+}
+.doc-drop-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: 360px;
+  padding: 0 24px;
+  text-align: center;
+  text-wrap: pretty;
+  font-size: 13px;
+}
+.doc-drop-card strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+.doc-drop-icon {
+  color: var(--accent);
+  margin-bottom: 4px;
+}
+.doc-drop.error .doc-drop-icon,
+.doc-drop-error {
+  color: var(--danger);
+}
+.doc-drop-busy {
+  animation: pulse 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .doc-drop {
+    transition: none;
+    scale: none;
+  }
+  .doc-drop-busy {
+    animation: none;
+  }
+}
+.doc-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px 10px;
+  margin-top: 14px;
+  font-size: 13px;
+}
+.doc-hint-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 14px 6px 12px;
+}
+.doc-hint-btn svg {
+  color: var(--accent);
+}
+.attach-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: -4px;
+  border-radius: 7px;
+  color: var(--muted);
+  flex: none;
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+.attach-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.attach-btn:disabled {
+  opacity: 0.5;
+}
+/* A thread on a document: the document and section in the quote's head, and its other threads. */
+.quote-doc {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text);
+}
+.quote-doc svg {
+  flex: none;
+  color: var(--accent);
+}
+.quote-doc-name,
+.quote-doc-section {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.quote-doc-section {
+  color: var(--muted);
+}
+.doc-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.doc-nav-count {
+  min-width: 34px;
+  text-align: center;
+}
+.doc-nav-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: var(--muted);
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+.doc-nav-btn::after {
+  content: '';
+  position: absolute;
+  inset: -6px -2px;
+}
+.doc-nav-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.doc-nav-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+/* Reached with previous / next: the passage and replies come in from where it sits in the document. */
+.thread-panel-inner[data-enter] > :not(.conv-head) {
+  animation: thread-nav-in var(--page-slide-dur) var(--page-slide-ease);
+}
+.thread-panel-inner[data-enter='up'] {
+  --thread-nav-from: calc(var(--page-slide-distance) * -1);
+}
+.thread-panel-inner[data-enter='down'] {
+  --thread-nav-from: var(--page-slide-distance);
+}
+@keyframes thread-nav-in {
+  from {
+    opacity: 0;
+    transform: translateY(var(--thread-nav-from));
+    filter: blur(var(--page-blur));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .thread-panel-inner[data-enter] > :not(.conv-head) {
+    animation: none;
+  }
+}
+.doc-chosen {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 4px 4px 4px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  font-size: 12.5px;
+}
+.doc-chosen > svg {
+  flex: none;
+  color: var(--accent);
+}
+.doc-chosen code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.folder-suggestion svg {
+  vertical-align: -2px;
+  color: var(--accent);
+}
+@media (max-width: 640px) {
+  .msg.doc {
+    padding-left: 30px;
+    padding-right: 12px;
+  }
+  .doc-head {
+    margin: 0 -12px 4px -30px;
+    padding-left: 30px;
+    padding-right: 6px;
+  }
+  .doc-icon {
+    left: 7px;
+  }
+  .doc-track {
+    left: 30px;
+    right: 12px;
+  }
+  .doc-btn {
+    min-width: 28px;
+    padding: 0 5px;
+  }
+}
+}

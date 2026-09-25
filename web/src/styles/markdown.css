@@ -180,6 +180,17 @@
     margin-top: 1.5rem;
   }
 
+  /* Shared documents (DocumentMessage): long-form spacing and a step up for headings. */
+  .md-body.md-doc > [data-block] + [data-block] {
+    margin-top: 1.25rem;
+  }
+  .md-body.md-doc > [data-block] + [data-block]:has(> .md-root > .comark-content > h2) {
+    margin-top: 2.75rem;
+  }
+  .md-body.md-doc > [data-block] + [data-block]:has(> .md-root > .comark-content > h3) {
+    margin-top: 2rem;
+  }
+
   .md-root :is(h1, h2, h3, h4, h5, h6):not(figure *) {
     font-family: var(--font-mono);
     font-weight: 400;
@@ -215,6 +226,27 @@
   .md-root :is(p, li):not(figure *) {
     font-size: 0.95rem;
     line-height: 1.625;
+  }
+  .md-doc .md-root :is(p, li):not(figure *) {
+    line-height: 1.7;
+  }
+  .md-doc .md-root h1:not(figure *) {
+    font-size: 1.5rem;
+    line-height: 1.2;
+    text-wrap: balance;
+  }
+  @media (width >= 40rem) {
+    .md-doc .md-root h1:not(figure *) {
+      font-size: 1.75rem;
+    }
+  }
+  .md-doc .md-root h2:not(figure *) {
+    font-size: 0.9rem;
+    text-wrap: balance;
+  }
+  .md-doc .md-root h3:not(figure *) {
+    font-size: 1rem;
+    text-wrap: balance;
   }
   .md-root :is(p, ul, ol):not(figure *) {
     max-width: 68ch;

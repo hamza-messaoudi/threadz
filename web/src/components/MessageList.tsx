@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { ChildThread, Message, Run } from '../lib/api.ts';
+import { docMeta } from '../lib/document.ts';
+import { DocumentMessage } from './DocumentMessage.tsx';
 import { MessageView, type BlockRange } from './Message.tsx';
 
 /** A run of blocks in one message. */
@@ -27,7 +29,8 @@ export function MessageList({ messages, childThreads, runs, onOpenThread, onExte
     if (!focusId) return;
     const el = document.getElementById(`m-${focusId}`);
     if (!el) return;
-    el.scrollIntoView({ block: 'center' });
+    // A document is taller than the screen: show its start, not its middle.
+    el.scrollIntoView({ block: docMeta(messages.find((m) => m.id === focusId)) ? 'start' : 'center' });
     setFlashId(focusId);
     const t = setTimeout(() => setFlashId(null), 1700);
     return () => clearTimeout(t);
@@ -35,20 +38,23 @@ export function MessageList({ messages, childThreads, runs, onOpenThread, onExte
 
   return (
     <div className="message-list">
-      {messages.map((m) => (
-        <MessageView
-          key={m.id}
-          m={m}
-          childThreads={childThreads}
-          run={m.runId ? runs?.[m.runId] : undefined}
-          onOpenThread={onOpenThread}
-          onExtendPassage={onExtendPassage}
-          allowThreads={allowThreads}
-          activeRange={activeSource?.messageId === m.id ? activeSource : null}
-          pendingRange={pending?.messageId === m.id ? pending : null}
-          flash={flashId === m.id}
-        />
-      ))}
+      {messages.map((m) => {
+        const View = docMeta(m) ? DocumentMessage : MessageView;
+        return (
+          <View
+            key={m.id}
+            m={m}
+            childThreads={childThreads}
+            run={m.runId ? runs?.[m.runId] : undefined}
+            onOpenThread={onOpenThread}
+            onExtendPassage={onExtendPassage}
+            allowThreads={allowThreads}
+            activeRange={activeSource?.messageId === m.id ? activeSource : null}
+            pendingRange={pending?.messageId === m.id ? pending : null}
+            flash={flashId === m.id}
+          />
+        );
+      })}
     </div>
   );
 }

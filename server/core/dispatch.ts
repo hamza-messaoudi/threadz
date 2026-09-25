@@ -1,4 +1,5 @@
 import type { AppContext } from '../app.ts';
+import { describeDocument, documentMeta, DOCUMENT_NAME_RE, MAX_DOCUMENT_CHARS } from '../context/documents.ts';
 import { resolveMentions } from '../context/mentions.ts';
 import type { MessageRow, ThreadRow } from '../db/queries.ts';
 import { serializeConversation, serializeMessage } from './serialize.ts';
@@ -44,15 +45,23 @@ export function moveThread(ctx: AppContext, thread: ThreadRow, to: string | null
   return target;
 }
 
-/** Agent that answers an untagged message: the last agent in the thread, else the source message's agent. */
+/**
+ * Agent that answers an untagged message: the last agent in the thread, else the source message's agent.
+ * Around a shared document nobody has asked about yet, the conversation's last agent, else the built-in
+ * @claude, so a question about a passage gets an answer without tagging anyone.
+ */
 export function defaultAgent(ctx: AppContext, thread: ThreadRow): string | null {
-  const last = ctx.store.lastAgentInThread(thread.id);
-  if (last && ctx.cfg.agents[last]) return last;
-  if (thread.parent_message_id) {
-    const src = ctx.store.getMessage(thread.parent_message_id);
-    if (src?.author_kind === 'agent' && src.author_id && ctx.cfg.agents[src.author_id]) return src.author_id;
-  }
-  return null;
+  const { store, cfg } = ctx;
+  const last = store.lastAgentInThread(thread.id);
+  if (last && cfg.agents[last]) return last;
+  const src = thread.parent_message_id ? store.getMessage(thread.parent_message_id) : undefined;
+  if (src?.author_kind === 'agent' && src.author_id && cfg.agents[src.author_id]) return src.author_id;
+  const onDocument = src ? !!documentMeta(src) : !thread.parent_thread_id && store.listMessages(thread.id).some((m) => documentMeta(m));
+  if (!onDocument) return null;
+  const around = thread.parent_thread_id ?? thread.origin_thread_id;
+  const recent = around ? store.lastAgentInThread(around) : null;
+  if (recent && cfg.agents[recent]) return recent;
+  return cfg.agents.claude ? 'claude' : null;
 }
 
 export interface PostResult {
@@ -117,4 +126,30 @@ export function postUserMessage(ctx: AppContext, threadId: string, body: { text?
 
 export function isDoneMessage(m: MessageRow | undefined): m is MessageRow {
   return !!m && m.status === 'done';
+}
+
+/**
+ * Shares a Markdown document in a conversation's main thread: one message that renders in full and takes
+ * side threads on its paragraphs. Nobody is asked to reply; agents read it when they are next asked.
+ */
+export function postDocument(ctx: AppContext, threadId: string, body: { name?: unknown; content?: unknown }): ReturnType<typeof serializeMessage> {
+  const { store, hub } = ctx;
+  const thread = store.getThread(threadId);
+  if (!thread) throw new HttpError(404, 'thread not found');
+  if (thread.parent_thread_id) throw new HttpError(400, 'Documents go in a channel or chat, not in a side thread');
+  const name = typeof body.name === 'string' ? body.name.trim().split(/[\\/]/).pop()! : '';
+  if (!DOCUMENT_NAME_RE.test(name)) throw new HttpError(400, 'Only Markdown documents (.md) can be added');
+  const content = (typeof body.content === 'string' ? body.content : '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trimEnd();
+  if (!content.trim()) throw new HttpError(400, `${name} is empty`);
+  if (content.length > MAX_DOCUMENT_CHARS) throw new HttpError(413, `${name} is too large (over ${MAX_DOCUMENT_CHARS / 1_000_000} MB)`);
+  const meta = describeDocument(name, content);
+  const conversation = store.getConversation(thread.conversation_id)!;
+  if (conversation.kind === 'chat' && store.listMessages(thread.id).length === 0) {
+    store.updateConversation(conversation.id, { name: (meta.title ?? name.replace(DOCUMENT_NAME_RE, '')).slice(0, 40).trim() || name });
+    hub.global('conversation.updated', serializeConversation({ ...store.getConversation(conversation.id)!, root_thread_id: thread.id }));
+  }
+  const msg = store.insertMessage({ thread_id: thread.id, author_kind: 'user', content_md: content, status: 'done', meta });
+  const out = serializeMessage(msg);
+  hub.thread(thread.id, 'message.created', out);
+  return out;
 }

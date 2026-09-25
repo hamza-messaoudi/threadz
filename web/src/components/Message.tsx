@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, type ChildThread, type Message as Msg, type Run, type ToolEvent } from '../lib/api.ts';
 import { useSmoothText } from '../lib/useSmoothText.ts';
 import { MarkdownBlocks, MessageMarkdown, useParsed } from '../markdown/MessageMarkdown.tsx';
@@ -200,10 +200,14 @@ function AgentStatus({ m }: { m: Msg }) {
   if (m.toolEvents.length !== seen.current.tools) seen.current = { ...seen.current, tools: m.toolEvents.length, last: 'tool' };
   if (m.content.length !== seen.current.text) seen.current = { ...seen.current, text: m.content.length, last: 'text' };
   const running = [...m.toolEvents].reverse().find((t) => t.output_preview === undefined);
+  // The first thread on a long document reads it once before answering (server: READING_MARKER).
+  const reading = m.status === 'streaming' && !m.content && m.markers.some((mk) => mk.startsWith('reading '));
   const text =
     m.status === 'queued'
       ? 'Waiting for a free slot…'
-      : running
+      : reading
+        ? 'Reading the document…'
+        : running
         ? toolActivity(running)
         : seen.current.last === 'text' || (seen.current.last === 'none' && m.content)
           ? 'Writing…'
@@ -259,11 +263,14 @@ function Body(props: MessageProps) {
   );
 }
 
-/** Wraps each block with its thread controls: the reply gutter, the rail, the reply badge. */
-function useBlockRenderer({ m, childThreads, activeRange, pendingRange, onOpenThread, onExtendPassage, allowThreads }: MessageProps) {
+/**
+ * Wraps each block with its thread controls: the reply gutter, the rail, the reply badge. The function
+ * keeps its identity until one of those changes, so memoised block lists (a document) skip re-renders.
+ */
+export function useBlockRenderer({ m, childThreads, activeRange, pendingRange, onOpenThread, onExtendPassage, allowThreads }: MessageProps) {
   const threads = useMemo(() => (childThreads ?? []).filter((t) => t.parentMessageId === m.id), [childThreads, m.id]);
   const canThread = allowThreads && m.status === 'done' && !!onOpenThread;
-  return (b: Block, content: ReactNode) => {
+  return useCallback((b: Block, content: ReactNode) => {
     const i = b.index;
     const covering = threads.filter((t) => t.blockIndex <= i && i <= t.blockEnd);
     // A block inside a multi-paragraph passage joins the rail of the block above it; a pending pick draws over threads.
@@ -325,7 +332,7 @@ function useBlockRenderer({ m, childThreads, activeRange, pendingRange, onOpenTh
         ))}
       </div>
     );
-  };
+  }, [m, threads, canThread, activeRange, pendingRange, onOpenThread, onExtendPassage]);
 }
 
 export function relTime(ts: number): string {
@@ -349,6 +356,9 @@ function CacheBadge({ m }: { m: Msg }) {
   const title = [
     `First API call of this turn: ${read.toLocaleString()} cache read, ${create.toLocaleString()} cache write, ${input.toLocaleString()} uncached input`,
     `Whole turn: ${(u.cache_read_input_tokens ?? 0).toLocaleString()} read, ${(u.cache_creation_input_tokens ?? 0).toLocaleString()} write, ${(u.input_tokens ?? 0).toLocaleString()} input, ${(u.output_tokens ?? 0).toLocaleString()} output`,
+    u.reader
+      ? `Read the document first, once for all its threads: ${(u.reader.cache_read_input_tokens ?? 0).toLocaleString()} read, ${(u.reader.cache_creation_input_tokens ?? 0).toLocaleString()} write${u.reader.total_cost_usd ? `, $${u.reader.total_cost_usd.toFixed(4)}` : ''}`
+      : '',
     u.total_cost_usd ? `Cost: $${u.total_cost_usd.toFixed(4)}` : '',
   ]
     .filter(Boolean)

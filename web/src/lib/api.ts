@@ -41,6 +41,8 @@ export interface Usage {
   output_tokens?: number;
   first_call?: { input_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number };
   total_cost_usd?: number;
+  /** The document reader turn that ran before this one (a long document's first thread). */
+  reader?: { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number; total_cost_usd?: number };
 }
 
 export interface Mention {

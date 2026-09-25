@@ -1,3 +1,4 @@
+import { CaretDown, CaretUp, FileMd } from '@phosphor-icons/react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type Conversation, type Mention } from '../lib/api.ts';
 import { agentColor } from '../lib/store.tsx';
@@ -33,6 +34,17 @@ function dismissNudge(threadId: string) {
   }
 }
 
+/** A thread on a shared document: which one, where, and the way to the document's other threads. */
+export interface DocNav {
+  name: string;
+  /** The heading the passage sits under. */
+  section: string | null;
+  index: number;
+  total: number;
+  onPrev?: () => void;
+  onNext?: () => void;
+}
+
 interface Props {
   threadId: string;
   conversation: Conversation;
@@ -40,9 +52,12 @@ interface Props {
   onClose: () => void;
   onSource: (s: Passage | null) => void;
   phase: PresencePhase;
+  doc?: DocNav | null;
+  /** Reached with previous / next: the passage and replies come in from that side. */
+  enter?: 'up' | 'down';
 }
 
-export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource, phase }: Props) {
+export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource, phase, doc, enter }: Props) {
   const t = useThread(threadId);
   const [collapsed, setCollapsed] = useState(false);
   const quoteBody = useRef<HTMLDivElement>(null);
@@ -93,7 +108,7 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
   return (
     // Card resize opens a column for the panel (the conversation narrows smoothly); panel reveal slides the contents in.
     <aside className={`thread-panel t-resize ${phase === 'open' ? 'is-open' : ''}`} inert={phase === 'closing'}>
-      <div className="thread-panel-inner t-panel-slide" data-axis="x" data-open={phase === 'open'}>
+      <div className="thread-panel-inner t-panel-slide" data-axis="x" data-open={phase === 'open'} data-enter={enter}>
       <header className="conv-head">
         <h2>Thread</h2>
         <span className="conv-dir">{conversation.kind === 'chat' ? conversation.name : `#${conversation.name}`}</span>
@@ -131,9 +146,30 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
       {info?.blockText && (
         <div className={`quote ${collapsed ? 'collapsed' : ''}`}>
           <div className="quote-head">
-            <span style={source?.authorKind === 'agent' ? { color: agentColor(source.authorId) } : undefined}>{sourceAuthor}</span>
+            {doc ? (
+              <span className="quote-doc">
+                <FileMd size={14} aria-hidden />
+                <span className="quote-doc-name">{doc.name}</span>
+                {doc.section && <span className="quote-doc-section">· {doc.section}</span>}
+              </span>
+            ) : (
+              <span style={source?.authorKind === 'agent' ? { color: agentColor(source.authorId) } : undefined}>{sourceAuthor}</span>
+            )}
             {paragraphs > 1 && <span className="muted">· {paragraphs} paragraphs</span>}
             <span className="spacer" />
+            {doc && doc.total > 1 && (
+              <span className="doc-nav">
+                <button className="doc-nav-btn" onClick={doc.onPrev} disabled={!doc.onPrev} data-tooltip="Previous thread in the document" aria-label="Previous thread in the document">
+                  <CaretUp size={13} />
+                </button>
+                <span className="doc-nav-count">
+                  {doc.index + 1} / {doc.total}
+                </span>
+                <button className="doc-nav-btn" onClick={doc.onNext} disabled={!doc.onNext} data-tooltip="Next thread in the document" aria-label="Next thread in the document">
+                  <CaretDown size={13} />
+                </button>
+              </span>
+            )}
             <button className="link" onClick={() => setCollapsed(!collapsed)} aria-expanded={!collapsed}>
               <SwapText text={collapsed ? 'Expand' : 'Collapse'} />
             </button>
@@ -146,7 +182,9 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
       <ScrollArea messages={t.messages} focusId={focusId}>
         <SkeletonReveal loaded={!t.loading} skeleton={<MessageSkeleton rows={2} />}>
           {t.loading ? null : t.messages.length === 0 ? (
-            <div className="empty-state muted">Ask about this passage. The main conversation is not affected.</div>
+            <div className="empty-state muted">
+              {doc ? 'Ask about this passage. The agent reads the whole document with it.' : 'Ask about this passage. The main conversation is not affected.'}
+            </div>
           ) : (
             <MessageList messages={t.messages} runs={t.runs} focusId={focusId} />
           )}

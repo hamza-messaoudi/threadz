@@ -71,7 +71,7 @@ describe('schema migrations', () => {
     d.prepare(`INSERT INTO messages (id, thread_id, author_kind, content_md, status, created_at) VALUES ('r', 't', 'user', 'q', 'done', 0)`).run();
 
     migrate(d);
-    expect(d.pragma('user_version', { simple: true })).toBe(5);
+    expect(d.pragma('user_version', { simple: true })).toBe(6);
     expect(d.pragma('foreign_keys', { simple: true })).toBe(1);
     expect(d.prepare(`SELECT block_index, block_end FROM threads WHERE id = 't'`).get()).toEqual({ block_index: 0, block_end: 0 });
     expect(d.prepare(`SELECT thread_id FROM messages WHERE id = 'r'`).get()).toEqual({ thread_id: 't' });

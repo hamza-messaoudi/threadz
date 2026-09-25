@@ -1,4 +1,5 @@
 import type { MessageRow } from '../db/queries.ts';
+import { documentMeta, renderDocument } from './documents.ts';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -16,8 +17,12 @@ export function authorLabel(m: Pick<MessageRow, 'author_kind' | 'author_id'>, se
   return `system:${m.author_id ?? 'app'}`;
 }
 
+/** One message as a transcript line. A shared document comes in full, whatever its length. */
 export function formatLine(m: MessageRow, selfAgent?: string, now?: number): string {
-  return `[${authorLabel(m, selfAgent)} ${stamp(m.created_at, now)}] ${m.content_md.trim()}`;
+  const head = `[${authorLabel(m, selfAgent)} ${stamp(m.created_at, now)}]`;
+  const doc = documentMeta(m);
+  if (doc) return `${head} shared the document "${doc.name}":\n${renderDocument(doc, m.content_md)}`;
+  return `${head} ${m.content_md.trim()}`;
 }
 
 /** Messages the agent should see: other authors' final text; never system rows or its own replies. */
