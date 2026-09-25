@@ -1,17 +1,21 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { FileMd } from '@phosphor-icons/react';
 import { api, type ChildThread, type Conversation, type Mention, type Message, type ThreadData } from '../lib/api.ts';
 import { tildify } from '../lib/dirs.ts';
+import { docMeta, outline, sectionAt, shareDocument } from '../lib/document.ts';
 import { navigate, type Route } from '../lib/router.ts';
 import { play } from '../lib/sound.ts';
 import { useAppData } from '../lib/store.tsx';
 import { usePresence } from '../lib/usePresence.ts';
 import { useThread } from '../lib/useThread.ts';
 import { DirButton, EditableTitle } from './ConvHeader.tsx';
-import { MessageMarkdown } from '../markdown/MessageMarkdown.tsx';
+import { MessageMarkdown, useParsed } from '../markdown/MessageMarkdown.tsx';
 import { Composer } from './Composer.tsx';
+import { useDocumentDrop, useDocumentPicker } from './DocumentDrop.tsx';
+import { SCROLL_INTENT } from './DocumentMessage.tsx';
 import { MessageList, type Passage } from './MessageList.tsx';
 import { ICONS } from './icons.tsx';
-import { ThreadPanel } from './ThreadPanel.tsx';
+import { ThreadPanel, type DocNav } from './ThreadPanel.tsx';
 import { MessageSkeleton, SkeletonReveal, SwapText, TextsReveal } from './transitions.tsx';
 
 interface Props {
@@ -45,9 +49,18 @@ function NewChat() {
     upsertConversation({ ...c, name: text.replace(/\s+/g, ' ').slice(0, 40) });
     navigate({ view: 'conversation', conversationId: c.id }, true);
   };
+  // A document instead of a first message: the chat is named after it.
+  const shareDoc = async (file: File) => {
+    const c = await api.post<Conversation>('/api/conversations', { kind: 'chat' });
+    const doc = await shareDocument(c.rootThreadId, file);
+    const meta = docMeta(doc)!;
+    upsertConversation({ ...c, name: (meta.title ?? meta.name.replace(/\.(md|markdown)$/i, '')).slice(0, 40) });
+    navigate({ view: 'conversation', conversationId: c.id }, true);
+  };
+  const drop = useDocumentDrop(shareDoc, 'as a new chat');
   return (
     <div className="conversation">
-      <div className="conv-main">
+      <div className="conv-main" {...drop.bind}>
         <header className="conv-head">
           <h2>New chat</h2>
         </header>
@@ -58,9 +71,11 @@ function NewChat() {
               Tag an agent with <strong>@</strong> or a workflow. Chats run in the scratch folder. Tag a folder with <strong>#</strong> to let the agent
               read it, or pick it with <strong>⇧↵</strong> to move the chat into it. Type a new name after # to create a fresh project folder{config?.dirRoots[0] ? ` in ${tildify(config.dirRoots[0], config.homeDir)}` : ''}.
             </p>
+            <DocumentHint className="t-stagger-line t-stagger-line--3" onFile={drop.run} />
           </TextsReveal>
         </div>
-        <Composer draftKey="new-chat" conversation={null} defaultAgent={null} placeholder="Message a new chat…" onSend={send} autoFocus />
+        <Composer draftKey="new-chat" conversation={null} defaultAgent={null} placeholder="Message a new chat…" onSend={send} onDocument={shareDoc} autoFocus />
+        {drop.overlay}
       </div>
     </div>
   );
@@ -82,6 +97,13 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
     },
     [conversation.rootThreadId],
   );
+  const shareDoc = useCallback(
+    async (file: File) => {
+      await shareDocument(conversation.rootThreadId, file);
+    },
+    [conversation.rootThreadId],
+  );
+  const drop = useDocumentDrop(shareDoc, `in ${conversation.kind === 'chat' ? 'this chat' : `#${conversation.name}`}`);
 
   // Opening the passage whose thread is already open closes the panel instead: one click opens, the next closes.
   const openThreadId = useRef(route.threadId);
@@ -170,12 +192,42 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
     return () => window.removeEventListener('keydown', on, true);
   }, [!!pending]);
 
+  // A thread on a document: its place among the document's threads, for the panel's previous / next.
+  const [navDir, setNavDir] = useState<{ id: string; dir: 'up' | 'down' } | null>(null);
+  const openChild = route.threadId ? t.childThreads.find((c) => c.id === route.threadId) : undefined;
+  const docSource = openChild && t.messages.find((m) => m.id === openChild.parentMessageId && docMeta(m));
+  // The document is parsed (and cached) for its own view already; this reads the same tree.
+  const docParsed = useParsed(docSource?.id ?? '', docSource?.content ?? '', false);
+  const docNav = useMemo<DocNav | null>(() => {
+    const open = openChild;
+    const src = docSource;
+    const meta = docMeta(src);
+    if (!open || !src || !meta) return null;
+    const list = t.childThreads.filter((c) => c.parentMessageId === src.id && !c.channel).sort((a, b) => a.blockIndex - b.blockIndex || a.blockEnd - b.blockEnd);
+    const i = list.findIndex((c) => c.id === open.id);
+    const parsed = docSource ? docParsed : null;
+    const go = (to: ChildThread | undefined, dir: 'up' | 'down') =>
+      to &&
+      (() => {
+        setNavDir({ id: to.id, dir });
+        navigate({ view: 'conversation', conversationId: conversation.id, threadId: to.id });
+      });
+    return {
+      name: meta.name,
+      section: (parsed && sectionAt(outline(parsed.blocks), open.blockIndex)?.text) || null,
+      index: i,
+      total: list.length,
+      onPrev: go(list[i - 1], 'up'),
+      onNext: go(list[i + 1], 'down'),
+    };
+  }, [openChild, docSource, docParsed, t.childThreads, conversation.id]);
+
   // The thread panel stays mounted while it slides out (transitions.dev panel reveal).
   const panel = usePresence(route.threadId, '--panel-close-dur', 350);
   const closePanel = useCallback(() => navigate({ view: 'conversation', conversationId: conversation.id }), [conversation.id]);
   return (
     <div className={`conversation ${conversation.yolo ? 'yolo' : ''}`}>
-      <div className="conv-main">
+      <div className="conv-main" {...drop.bind}>
         <header className="conv-head">
           <EditableTitle conversation={conversation} />
           {conversation.yolo && <span className="yolo-label">YOLO</span>}
@@ -209,7 +261,7 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
           <SkeletonReveal loaded={!t.loading} skeleton={<MessageSkeleton />}>
             {!t.loading && t.data?.origin && <OriginCard data={t.data} />}
             {t.loading ? null : t.messages.length === 0 ? (
-              <EmptyConversation conversation={conversation} />
+              <EmptyConversation conversation={conversation} onFile={drop.run} />
             ) : (
               <MessageList
                 messages={t.messages}
@@ -233,8 +285,10 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
           cwd={t.data?.thread.cwd}
           placeholder={`Message ${conversation.kind === 'chat' ? conversation.name : '#' + conversation.name}`}
           onSend={send}
+          onDocument={shareDoc}
           autoFocus
         />
+        {drop.overlay}
       </div>
       {panel.shown && (
         <ThreadPanel
@@ -245,6 +299,8 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
           focusId={route.messageId}
           onClose={closePanel}
           onSource={setActiveSource}
+          doc={panel.shown === route.threadId ? docNav : null}
+          enter={navDir?.id === panel.shown ? navDir.dir : undefined}
         />
       )}
       {pending && pick && (
@@ -330,7 +386,7 @@ function OriginCard({ data }: { data: ThreadData }) {
   );
 }
 
-function EmptyConversation({ conversation }: { conversation: Conversation }) {
+function EmptyConversation({ conversation, onFile }: { conversation: Conversation; onFile: (file: File) => void }) {
   return (
     <TextsReveal className="empty-state">
       <h3 className="t-stagger-line t-stagger-line--1">{conversation.kind === 'chat' ? 'Empty chat' : `Welcome to #${conversation.name}`}</h3>
@@ -338,13 +394,30 @@ function EmptyConversation({ conversation }: { conversation: Conversation }) {
         Tag an agent with <strong>@</strong> to start. Tag several to run them in parallel, or tag a workflow to run its steps in order.
         {' Tag a folder with # to let the agent read it, or pick it with ⇧↵ to move this conversation into it.'}
       </p>
+      <DocumentHint className="t-stagger-line t-stagger-line--3" onFile={onFile} />
     </TextsReveal>
+  );
+}
+
+/** Empty states: a document can be the start of a conversation too. */
+function DocumentHint({ className, onFile }: { className?: string; onFile: (file: File) => void }) {
+  const picker = useDocumentPicker(onFile);
+  return (
+    <div className={`doc-hint ${className ?? ''}`}>
+      <button className="btn doc-hint-btn" onClick={picker.open}>
+        <FileMd size={16} aria-hidden />
+        Read a Markdown document
+      </button>
+      <span className="muted">or drop a .md file here, then thread on any paragraph.</span>
+      {picker.input}
+    </div>
   );
 }
 
 /**
  * Keeps the view pinned to the bottom while new content streams in, unless the user scrolled up.
  * A new message jumps there; text growing inside one glides, so each new line does not jolt the view.
+ * A shared document is the exception: the view goes to its start, where reading begins.
  */
 export function ScrollArea({ messages, children, focusId }: { messages: Message[]; children: React.ReactNode; focusId?: string }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -390,11 +463,41 @@ export function ScrollArea({ messages, children, focusId }: { messages: Message[
   };
   useEffect(() => () => cancelAnimationFrame(glide.current.frame), []);
 
+  // A jump inside a document (contents, threads, fold) is the reader's own scroll, like a wheel.
+  useEffect(() => {
+    const el = ref.current;
+    el?.addEventListener(SCROLL_INTENT, touched);
+    return () => el?.removeEventListener(SCROLL_INTENT, touched);
+  }, []);
+
   const last = messages[messages.length - 1];
   const count = `${messages.length}:${last?.id}`;
+  const shown = useRef(false);
+  const reveal = useRef(0);
   useLayoutEffect(() => {
-    if (!focusId) jump();
+    if (focusId) return;
+    if (!docMeta(last)) return void jump();
+    // Glide up to a document just shared; open straight onto one that ends the conversation. Its text
+    // arrives a moment after its header (the parse), and the scroll waits for it, or it would stop short.
+    const smooth = shown.current && !matchMedia('(prefers-reduced-motion: reduce)').matches;
+    cancelAnimationFrame(glide.current.frame);
+    glide.current.frame = 0;
+    pinned.current = false;
+    let tries = 0;
+    const go = () => {
+      const el = ref.current;
+      const doc = el?.querySelector(`[id="m-${last.id}"]`);
+      if (!el || !doc) return;
+      if (!doc.querySelector('[data-block]') && tries++ < 30) return void (reveal.current = requestAnimationFrame(go));
+      const top = el.scrollTop + doc.getBoundingClientRect().top - el.getBoundingClientRect().top - 8;
+      el.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' });
+    };
+    go();
+    return () => cancelAnimationFrame(reveal.current);
   }, [count, focusId]);
+  useEffect(() => {
+    if (messages.length) shown.current = true;
+  }, [count]);
   // Streaming text, steps, parses and figures settling all resize the list: follow them.
   useEffect(() => {
     const el = ref.current;

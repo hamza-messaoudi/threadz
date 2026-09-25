@@ -1,9 +1,12 @@
+import { FilePlus } from '@phosphor-icons/react';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { api, type Conversation, type DirResult, type Mention } from '../lib/api.ts';
 import { createDir, createFirst, createOptions, tildify, type CreateOption } from '../lib/dirs.ts';
+import { pickFile } from '../lib/document.ts';
 import { play } from '../lib/sound.ts';
 import { agentColor, useAppData } from '../lib/store.tsx';
 import { useDropdown } from '../lib/useDropdown.ts';
+import { useDocumentPicker } from './DocumentDrop.tsx';
 import { useErrorShake } from './transitions.tsx';
 
 interface Props {
@@ -14,6 +17,8 @@ interface Props {
   cwd?: string;
   placeholder: string;
   onSend: (text: string, mentions: Mention[]) => Promise<void>;
+  /** Shares a Markdown document here (the button, or a pasted .md file). */
+  onDocument?: (file: File) => Promise<void>;
   autoFocus?: boolean;
 }
 
@@ -133,7 +138,7 @@ function placeCaretAtEnd(el: HTMLElement) {
   s?.addRange(r);
 }
 
-export function Composer({ draftKey, conversation, defaultAgent, cwd, placeholder, onSend, autoFocus }: Props) {
+export function Composer({ draftKey, conversation, defaultAgent, cwd, placeholder, onSend, onDocument, autoFocus }: Props) {
   const { config, upsertConversation } = useAppData();
   const ref = useRef<HTMLDivElement>(null);
   const [value, setValue] = useState<{ text: string; mentions: Mention[] }>({ text: '', mentions: [] });
@@ -145,6 +150,20 @@ export function Composer({ draftKey, conversation, defaultAgent, cwd, placeholde
   const [dirLabels, setDirLabels] = useState<Record<string, string>>({});
   const [yoloInit, setYoloInit] = useState<string | null>(null);
   const shake = useErrorShake<HTMLDivElement>(error, () => setError(null));
+  const [attaching, setAttaching] = useState(false);
+  const attach = async (file: File) => {
+    if (!onDocument || attaching) return;
+    setAttaching(true);
+    setError(null);
+    try {
+      await onDocument(file);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setAttaching(false);
+    }
+  };
+  const picker = useDocumentPicker(attach);
 
   // Restore the draft for this conversation/thread.
   useLayoutEffect(() => {
@@ -334,6 +353,9 @@ export function Composer({ draftKey, conversation, defaultAgent, cwd, placeholde
 
   const onPaste = (e: React.ClipboardEvent) => {
     e.preventDefault();
+    // A file copied in the Finder pastes as a document, not as its name.
+    const file = onDocument ? pickFile(e.clipboardData.files) : null;
+    if (file) return void attach(file);
     document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
   };
 
@@ -393,6 +415,14 @@ export function Composer({ draftKey, conversation, defaultAgent, cwd, placeholde
           suppressContentEditableWarning
         />
         <div className="composer-bar">
+          {onDocument && (
+            <>
+              <button className="attach-btn" onClick={picker.open} disabled={attaching} data-tooltip="Add a Markdown document · or drop a .md file here" aria-label="Add a Markdown document">
+                <FilePlus size={16} />
+              </button>
+              {picker.input}
+            </>
+          )}
           <span className={`hint ${analysis.blocked ? 'warn' : ''}`} title={analysis.hint}>
             {analysis.hint}
           </span>
