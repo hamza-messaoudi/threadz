@@ -8,7 +8,7 @@ import { TooltipLayer } from './components/TooltipLayer.tsx';
 import { TextsReveal } from './components/transitions.tsx';
 import { navigate, useRoute } from './lib/router.ts';
 import { AppDataProvider, useAppData } from './lib/store.tsx';
-import { useSidebarCollapsed } from './lib/useSidebar.ts';
+import { narrowScreen, useSidebarCollapsed } from './lib/useSidebar.ts';
 import { useTheme } from './lib/useTheme.ts';
 
 // Not linked from the UI; loaded only when /dev/markdown is opened.
@@ -45,6 +45,11 @@ function Shell() {
     window.addEventListener('keydown', on);
     return () => window.removeEventListener('keydown', on);
   }, []);
+
+  // On a phone the open sidebar covers the conversation: picking somewhere to go closes it.
+  useEffect(() => {
+    if (narrowScreen()) setCollapsed(true);
+  }, [route.view, route.conversationId]);
 
   const conversation = route.conversationId ? conversations.find((c) => c.id === route.conversationId) : undefined;
 

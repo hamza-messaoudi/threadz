@@ -118,7 +118,7 @@ export function Settings() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.tool}>
-                  <td>
+                  <td className="tool-cell">
                     <code>{r.tool}</code>
                   </td>
                   <td>
@@ -148,7 +148,7 @@ export function Settings() {
               <td>
                 <span className={`pill ${d.allow ? 'allow' : 'deny'}`}>{d.allow ? 'allow' : 'deny'}</span>
               </td>
-              <td>
+              <td className="tool-cell">
                 <code>{d.tool}</code>
               </td>
               <td className="muted">{d.mode}</td>

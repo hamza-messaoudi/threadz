@@ -55,8 +55,7 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search messages…  in:#channel  from:@agent  from:me"
           onKeyDown={(e) => {
-            if (e.key === 'Escape') close();
-            else if (e.key === 'ArrowDown') {
+            if (e.key === 'ArrowDown') {
               e.preventDefault();
               setSel((s) => Math.min(s + 1, results.length - 1));
             } else if (e.key === 'ArrowUp') {
@@ -70,11 +69,11 @@ export function SearchPalette({ onClose }: { onClose: () => void }) {
             <button key={r.messageId} className={`palette-item ${i === sel ? 'sel' : ''}`} onMouseEnter={() => setSel(i)} onClick={() => open(r)}>
               <div className="palette-meta">
                 <span>{r.conversationKind === 'chat' ? r.conversationName : `#${r.conversationName}`}</span>
-                {r.inThread && <span>· in thread</span>}
+                {r.inThread && <span>in thread</span>}
                 <span style={r.authorKind === 'agent' ? { color: agentColor(r.authorId) } : undefined}>
-                  · {r.authorKind === 'agent' ? `@${r.authorId}` : r.authorKind === 'user' ? 'you' : r.authorId}
+                  {r.authorKind === 'agent' ? `@${r.authorId}` : r.authorKind === 'user' ? 'you' : r.authorId}
                 </span>
-                <span>· {new Date(r.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                <span>{new Date(r.createdAt).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
               </div>
               <div className="palette-snippet" dangerouslySetInnerHTML={{ __html: cleanSnippet(r.snippet) }} />
             </button>

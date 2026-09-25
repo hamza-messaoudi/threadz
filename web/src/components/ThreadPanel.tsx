@@ -124,7 +124,7 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
             Make channel
           </button>
         )}
-        <button className="btn ghost" onClick={onClose} data-tooltip="Close (Esc)" aria-label="Close thread">
+        <button className="btn ghost icon-only" onClick={onClose} data-tooltip="Close (Esc)" aria-label="Close thread">
           {ICONS.close}
         </button>
       </header>
@@ -191,7 +191,7 @@ function ConfirmButton({ icon, label, confirm, tooltip, disabled, onConfirm }: {
   }, [armed]);
   return (
     <button
-      className={`btn ghost small confirm-btn ${armed ? 'armed' : ''}`}
+      className={`btn ghost small confirm-btn ${armed ? 'armed' : 'icon-only'}`}
       disabled={disabled}
       data-tooltip={armed ? undefined : tooltip}
       aria-label={armed ? confirm : label}

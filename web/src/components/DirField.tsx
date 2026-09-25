@@ -100,7 +100,8 @@ export function DirField({ value, onChange, autoFocus }: { value: string | null;
           } else if (e.key === 'Enter' && rows[sel]) {
             e.preventDefault();
             pick(rows[sel]);
-          } else if (e.key === 'Escape') {
+          } else if (e.key === 'Escape' && open) {
+            // Esc closes the open list first; a second Esc reaches the dialog.
             e.stopPropagation();
             setOpen(false);
           }

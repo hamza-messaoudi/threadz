@@ -17,6 +17,8 @@ const BASE = {
   securityLevel: 'strict' as const,
   htmlLabels: false,
   suppressErrorRendering: true,
+  // Mermaid's default wrap width is for proportional type; in Hack it split words like "reins/tall" mid-word.
+  flowchart: { wrappingWidth: 200 },
   // Keys a diagram's own directives may never change.
   secure: ['secure', 'securityLevel', 'startOnLoad', 'maxTextSize', 'maxEdges', 'suppressErrorRendering', 'htmlLabels', 'theme', 'themeVariables', 'themeCSS', 'fontFamily', 'darkMode'],
 };

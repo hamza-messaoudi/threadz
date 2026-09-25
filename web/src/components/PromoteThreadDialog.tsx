@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api, type Conversation, type ThreadInfo } from '../lib/api.ts';
 import { slugify } from '../lib/dirs.ts';
@@ -34,17 +34,6 @@ export function PromoteThreadDialog({ thread, from, onClose }: { thread: ThreadI
   const { close, modalClass, backdropClass } = useModal(onClose);
   const shake = useErrorShake<HTMLInputElement>(error, () => setError(null));
   const moved = dir !== initialDir;
-
-  // The folder picker stops Esc while its list is open; otherwise Esc closes the dialog.
-  useEffect(() => {
-    const on = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || e.defaultPrevented) return;
-      e.preventDefault();
-      close();
-    };
-    window.addEventListener('keydown', on);
-    return () => window.removeEventListener('keydown', on);
-  }, [close]);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
