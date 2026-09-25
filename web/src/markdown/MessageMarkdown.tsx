@@ -108,7 +108,8 @@ export function MarkdownBlocks({
     <div ref={ref} className={`md-body ${streaming ? 'md-streaming' : ''} ${className ?? ''}`}>
       {parsed.blocks.map((b) => {
         const last = b.index === n - 1;
-        const body = <BlockView node={b.node} last={last} open={streaming && last} />;
+        // The block before the one being written keeps its word spans, so its last words finish fading in.
+        const body = <BlockView node={b.node} last={last} open={streaming && last} words={streaming && b.index >= n - 2} />;
         return renderBlock ? (
           <Fragment key={b.index}>{renderBlock(b, body, last)}</Fragment>
         ) : (
@@ -126,9 +127,9 @@ const renderNode = (node: Block['node']) => <MarkdownDocument value={{ nodes: [n
 const OPEN = { open: true };
 const CLOSED = { open: false };
 
-const BlockView = memo(function BlockView({ node: source, last, open }: { node: Block['node']; last: boolean; open: boolean }) {
+const BlockView = memo(function BlockView({ node: source, last, open, words }: { node: Block['node']; last: boolean; open: boolean; words: boolean }) {
   // The block still being written streams its words in; a finished block renders as written.
-  const node = useMemo(() => (open ? streamWords(source) : source), [source, open]);
+  const node = useMemo(() => (words ? streamWords(source) : source), [source, words]);
   return (
     <BlockContext.Provider value={open ? OPEN : CLOSED}>
       <div className={`md-root ${last ? 'md-last' : ''}`}>

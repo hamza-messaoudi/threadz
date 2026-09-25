@@ -1,9 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
+import { useLayoutEffect, type RefObject } from 'react';
 import type { ElementNode, Node } from '../../../shared/markdown.ts';
-import { durationVar } from '../lib/usePresence.ts';
 
 // transitions.dev "Streaming text" for a message that is still arriving: the last block's prose words
-// become .t-stream-w spans, and useStreamWords resolves new ones in order, one every --stream-gap.
+// become .t-stream-w spans, and useStreamWords fades each new one in.
 
 /** Only prose is split; code, tables and figures keep their own rendering. */
 const PROSE = new Set(['p', 'li', 'ul', 'ol', 'blockquote', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'strong', 'em', 'b', 'i', 'u', 's', 'del', 'a', 'mark']);
@@ -20,34 +19,15 @@ function wrap(node: Node): Node[] {
   return [[tag, props, ...children.flatMap(wrap)] as Node];
 }
 
-/** However fast text arrives, words queue for at most this long. */
-const MAX_BACKLOG_MS = 500;
-
-/** Adds .is-in to each new word span under `root`, in document order. */
+/**
+ * Adds .is-in to each new word span under `root`, two frames after it mounts: one frame painted at
+ * opacity 0, so the fade runs. The pace comes from the text itself (useSmoothText), not a queue here.
+ */
 export function useStreamWords(root: RefObject<HTMLElement | null>, active: boolean) {
-  const queue = useRef<HTMLElement[]>([]);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const next = () => {
-    timer.current = null;
-    let el: HTMLElement | undefined;
-    while ((el = queue.current.shift()) && (!el.isConnected || el.classList.contains('is-in')));
-    if (!el) return;
-    el.classList.add('is-in');
-    const gap = Math.min(durationVar('--stream-gap', 60), MAX_BACKLOG_MS / Math.max(queue.current.length, 1));
-    timer.current = setTimeout(next, gap);
-  };
-
-  // After every render: pick up the words that have not resolved yet.
   useLayoutEffect(() => {
     if (!active || !root.current) return;
-    queue.current = Array.from(root.current.querySelectorAll<HTMLElement>('.t-stream-w:not(.is-in)'));
-    if (!timer.current) next();
+    const fresh = root.current.querySelectorAll<HTMLElement>('.t-stream-w:not(.is-in)');
+    if (!fresh.length) return;
+    requestAnimationFrame(() => requestAnimationFrame(() => fresh.forEach((el) => el.classList.add('is-in'))));
   });
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-    },
-    [],
-  );
 }

@@ -1,5 +1,6 @@
 import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { api, type ChildThread, type Message as Msg, type Run, type ToolEvent } from '../lib/api.ts';
+import { useSmoothText } from '../lib/useSmoothText.ts';
 import { MarkdownBlocks, MessageMarkdown, useParsed } from '../markdown/MessageMarkdown.tsx';
 import type { Block } from '../markdown/blocks.ts';
 import { agentColor, useAppData } from '../lib/store.tsx';
@@ -39,9 +40,25 @@ export const MessageView = memo(function MessageView(props: MessageProps) {
   const { m } = props;
   if (m.authorKind === 'system') return <SystemMessage {...props} />;
   if (m.authorKind === 'user') return <UserMessage {...props} />;
+  return <AgentMessage {...props} />;
+});
+
+function AgentMessage(props: MessageProps) {
+  const { m } = props;
   const name = m.authorId ?? 'agent';
   const color = agentColor(m.authorId);
   const live = m.status === 'streaming' || m.status === 'queued';
+  // The text as revealed so far: it runs a little behind the stream, at a steady pace.
+  const smooth = useSmoothText(m.content, m.status === 'streaming');
+  // The status line stays until the text has caught up, then folds away and unmounts.
+  const working = live || !smooth.done;
+  const [statusMounted, setStatusMounted] = useState(working);
+  if (working && !statusMounted) setStatusMounted(true);
+  useEffect(() => {
+    if (working || !statusMounted) return;
+    const t = setTimeout(() => setStatusMounted(false), 600);
+    return () => clearTimeout(t);
+  }, [working, statusMounted]);
 
   return (
     <div className={`msg agent ${props.flash ? 'flash' : ''}`} id={`m-${m.id}`} data-message-id={m.id}>
@@ -71,12 +88,17 @@ export const MessageView = memo(function MessageView(props: MessageProps) {
           {m.sessionId && m.cwd && <TerminalButton m={m} />}
         </span>
       </div>
-      <AgentBody {...props} />
-      {live && <AgentStatus m={m} />}
+      <AgentBody {...props} smooth={smooth} />
+      {/* Folds away rather than vanishing, so the text above does not jump when the turn ends. */}
+      {statusMounted && (
+        <Accordion open={working}>
+          <AgentStatus m={m} />
+        </Accordion>
+      )}
       {m.status === 'error' && <ErrorCard m={m} />}
     </div>
   );
-});
+}
 
 /** Your messages sit in a frame on the right; the agents' replies are unframed. */
 function UserMessage(props: MessageProps) {
@@ -95,13 +117,16 @@ function UserMessage(props: MessageProps) {
  * An agent's turn in the order it happened: thinking, text, tool calls, more text. Once the turn is
  * done, everything before the final answer folds into one "3 tool calls, 2 messages" row.
  */
-function AgentBody(props: MessageProps) {
-  const { m, childThreads, activeRange, pendingRange } = props;
-  const streaming = m.status === 'streaming';
-  const live = streaming || m.status === 'queued';
-  const parsed = useParsed(m.id, m.content, streaming);
-  const steps = useMemo(() => orderSteps(m), [m.toolEvents, m.thinking]);
-  const { anchors, ready } = useAnchors(m.id, m.content, steps.map((s) => s.at));
+function AgentBody(props: MessageProps & { smooth: { text: string; done: boolean } }) {
+  const { m, childThreads, activeRange, pendingRange, smooth } = props;
+  const live = m.status === 'streaming' || m.status === 'queued';
+  const content = smooth.text;
+  const streaming = m.status === 'streaming' || !smooth.done;
+  const parsed = useParsed(m.id, content, streaming);
+  const all = useMemo(() => orderSteps(m), [m.toolEvents, m.thinking]);
+  // A step shows once the text written before it has.
+  const steps = all.filter((s) => s.at <= content.length);
+  const { anchors, ready } = useAnchors(m.id, content, steps.map((s) => s.at));
   const renderBlock = useBlockRenderer(props);
   const [open, setOpen] = useState<boolean | null>(null);
 
@@ -109,16 +134,16 @@ function AgentBody(props: MessageProps) {
   const row = (s: Step) => <StepRow key={s.id} step={s} live={live && (s.kind === 'tool' || (s === lastStep && s.at === m.content.length))} />;
 
   // The whole reply could not be parsed: the text as written, steps first.
-  if (!parsed && m.content && !streaming)
+  if (!parsed && content && !streaming)
     return (
       <div className="msg-body">
         {steps.map(row)}
-        <div className="md-body md-unparsed">{m.content}</div>
+        <div className="md-body md-unparsed">{content}</div>
       </div>
     );
   // Measuring where the steps go takes a parse; a finished reply waits for it rather than jumping.
-  if (!parsed || (!ready && !live)) {
-    if (m.content && !live) return null;
+  if (!parsed || (!ready && !streaming)) {
+    if (content && !streaming) return null;
     return steps.length ? <div className="msg-body">{steps.map(row)}</div> : null;
   }
 
@@ -148,7 +173,7 @@ function AgentBody(props: MessageProps) {
   // Fold the steps once the turn has a final answer after its last tool call.
   const final = units.at(-1);
   const tools = steps.flatMap((s) => (s.kind === 'tool' ? [s.tool] : []));
-  if (m.status !== 'done' || !tools.length || final?.kind !== 'text') return <div className="msg-body">{units.map(unit)}</div>;
+  if (m.status !== 'done' || streaming || !tools.length || final?.kind !== 'text') return <div className="msg-body">{units.map(unit)}</div>;
 
   const before = units.slice(0, -1);
   const cut = final.from;

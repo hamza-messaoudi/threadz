@@ -307,33 +307,87 @@ function EmptyConversation({ conversation }: { conversation: Conversation }) {
   );
 }
 
-/** Keeps the view pinned to the bottom while new content streams in, unless the user scrolled up. */
+/**
+ * Keeps the view pinned to the bottom while new content streams in, unless the user scrolled up.
+ * A new message jumps there; text growing inside one glides, so each new line does not jolt the view.
+ */
 export function ScrollArea({ messages, children, focusId }: { messages: Message[]; children: React.ReactNode; focusId?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   const pinned = useRef(true);
+  const glide = useRef({ frame: 0, last: 0 });
+  // Only the user unpins: layout shifts and scroll anchoring move scrollTop too.
+  const userAt = useRef(-Infinity);
+  const touched = () => {
+    userAt.current = performance.now();
+  };
   const onScroll = () => {
     const el = ref.current!;
-    pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) pinned.current = true;
+    else if (performance.now() - userAt.current < 600) pinned.current = false;
   };
-  const last = messages[messages.length - 1];
-  const signature = `${messages.length}:${last?.content.length}:${last?.status}:${last?.toolEvents.length}:${last?.thinking?.reduce((n, t) => n + t.text.length, 0)}`;
-  useLayoutEffect(() => {
-    if (focusId) return;
+  const jump = () => {
     const el = ref.current;
-    if (el && pinned.current) el.scrollTop = el.scrollHeight;
-  }, [signature, focusId]);
-  // Markdown re-renders after a parse (and figures settle) without a new signature: stay pinned.
+    if (!el || !pinned.current) return;
+    cancelAnimationFrame(glide.current.frame);
+    glide.current.frame = 0;
+    el.scrollTop = el.scrollHeight;
+  };
+  const follow = () => {
+    const g = glide.current;
+    const el = ref.current;
+    if (g.frame || !pinned.current || !el) return;
+    // More than a screen to go (a thread loading, not a line being written) jumps.
+    if (el.scrollHeight - el.clientHeight - el.scrollTop > el.clientHeight || matchMedia('(prefers-reduced-motion: reduce)').matches) return jump();
+    const tick = (now: number) => {
+      const el = ref.current;
+      const dt = g.last ? Math.min(now - g.last, 100) : 16;
+      g.last = now;
+      const gap = el ? el.scrollHeight - el.clientHeight - el.scrollTop : 0;
+      if (!el || !pinned.current || gap < 0.5) {
+        g.frame = g.last = 0;
+        return;
+      }
+      // Ease toward the bottom with a ~90 ms time constant.
+      el.scrollTop += Math.max(1, gap * (1 - Math.exp(-dt / 90)));
+      g.frame = requestAnimationFrame(tick);
+    };
+    g.frame = requestAnimationFrame(tick);
+  };
+  useEffect(() => () => cancelAnimationFrame(glide.current.frame), []);
+
+  const last = messages[messages.length - 1];
+  const count = `${messages.length}:${last?.id}`;
+  useLayoutEffect(() => {
+    if (!focusId) jump();
+  }, [count, focusId]);
+  // Streaming text, steps, parses and figures settling all resize the list: follow them.
   useEffect(() => {
     const el = ref.current;
     if (!el || focusId || typeof ResizeObserver === 'undefined') return;
-    const ro = new ResizeObserver(() => {
-      if (pinned.current) el.scrollTop = el.scrollHeight;
-    });
-    for (const child of Array.from(el.children)) ro.observe(child);
-    return () => ro.disconnect();
+    const ro = new ResizeObserver(follow);
+    const observe = () => {
+      ro.disconnect();
+      for (const child of Array.from(el.children)) ro.observe(child);
+    };
+    observe();
+    // The skeleton hands over to the list as a new child: watch that one too.
+    const mo = new MutationObserver(observe);
+    mo.observe(el, { childList: true });
+    return () => {
+      ro.disconnect();
+      mo.disconnect();
+    };
   }, [focusId]);
   return (
-    <div className="messages-scroll" ref={ref} onScroll={onScroll}>
+    <div
+      className="messages-scroll"
+      ref={ref}
+      onScroll={onScroll}
+      onWheel={touched}
+      onTouchMove={touched}
+      onKeyDown={touched}
+      onPointerDown={touched}
+    >
       {children}
     </div>
   );

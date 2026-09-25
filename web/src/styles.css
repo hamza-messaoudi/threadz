@@ -49,7 +49,6 @@
   --think-highlight: #0d0d0d;
   --think-ease: ease-in-out;
   /* transitions.dev "Streaming text" tokens */
-  --stream-gap: 60ms;
   --stream-fade: 350ms;
   --stream-blur: 1px;
   --stream-ease: cubic-bezier(0.22, 1, 0.36, 1);
@@ -1512,7 +1511,7 @@ pre {
 }
 .t-stream-w.is-in {
   opacity: 1;
-  filter: blur(0);
+  filter: none; /* no filter left behind: hundreds of filtered spans cost a layer each */
 }
 
 @media (prefers-reduced-motion: reduce) {
