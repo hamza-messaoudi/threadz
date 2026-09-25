@@ -2,6 +2,7 @@
 // orchestration: class swaps, forced reflows and timings read from the :root tokens.
 import { CaretDown, Check } from '@phosphor-icons/react';
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { play } from '../lib/sound.ts';
 import { durationVar } from '../lib/usePresence.ts';
 
 /** Accordion expand: the panel grows via grid rows 0fr ↔ 1fr and the chevron flips. */
@@ -243,6 +244,7 @@ export function useErrorShake<T extends HTMLElement>(error: string | null, clear
   useEffect(() => {
     const el = ref.current;
     if (!error || !el) return;
+    play('error');
     // Replay the shake from a clean baseline.
     el.classList.remove('is-shaking');
     void el.offsetWidth;

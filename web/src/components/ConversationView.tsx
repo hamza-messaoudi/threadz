@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { api, type ChildThread, type Conversation, type Mention, type Message, type ThreadData } from '../lib/api.ts';
 import { tildify } from '../lib/dirs.ts';
 import { navigate, type Route } from '../lib/router.ts';
+import { play } from '../lib/sound.ts';
 import { useAppData } from '../lib/store.tsx';
 import { usePresence } from '../lib/usePresence.ts';
 import { useThread } from '../lib/useThread.ts';
@@ -93,7 +94,10 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
       if (th.conversationId !== conversation.id) navigate({ view: 'conversation', conversationId: th.conversationId });
       // A pick that only reopens the open thread closes it; one that grew it keeps it open.
       else if (th.id === openThreadId.current && !th.widened) navigate({ view: 'conversation', conversationId: conversation.id });
-      else navigate({ view: 'conversation', conversationId: conversation.id, threadId: th.id });
+      else {
+        play('thread');
+        navigate({ view: 'conversation', conversationId: conversation.id, threadId: th.id });
+      }
     },
     [conversation.id],
   );

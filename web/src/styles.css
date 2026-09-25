@@ -2686,6 +2686,37 @@ details.step-prompt pre {
 .settings h2 {
   margin-top: 0;
 }
+.sound-setting {
+  flex-wrap: wrap;
+  column-gap: 16px;
+  margin-bottom: 4px;
+}
+.sound-setting + p {
+  margin-top: 0;
+  font-size: 13px;
+}
+.sound-volume {
+  transition: opacity 150ms ease-out;
+}
+.sound-volume[data-off] {
+  opacity: 0.5;
+}
+.sound-volume input[type='range'] {
+  width: 140px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.sound-volume input[type='range']:disabled {
+  cursor: default;
+}
+.sound-volume-value {
+  min-width: 4ch;
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 .gate-table {
   border-collapse: collapse;
   width: 100%;
