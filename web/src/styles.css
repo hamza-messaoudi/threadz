@@ -201,6 +201,10 @@ body,
   height: 100%;
   margin: 0;
 }
+/* The canvas behind the page (overscroll, the first frame) follows the theme too. */
+html {
+  background: var(--bg);
+}
 body {
   font-family: var(--font);
   font-size: 14px;
@@ -308,6 +312,13 @@ pre {
   right: 8px;
   z-index: 2;
 }
+/* Optical centering: the bar and the arrowhead put the weight on one side, so the icon moves 1px the other way. */
+.side-toggle-btn .t-icon[data-icon='a'] svg {
+  translate: 1px 0;
+}
+.side-toggle-btn .t-icon[data-icon='b'] svg {
+  translate: -1px 0;
+}
 .rail {
   display: flex;
   flex-direction: column;
@@ -331,6 +342,10 @@ pre {
 .rail-btn:hover {
   background: var(--bg-hover);
   color: var(--text);
+}
+/* The lens carries the magnifier's weight up and to the left: a quarter pixel back toward the centre. */
+.rail-search-icon {
+  translate: 0.25px 0.25px;
 }
 @media (prefers-reduced-motion: reduce) {
   .app {
@@ -490,6 +505,7 @@ pre {
 .side-archive svg {
   width: 14px;
   height: 14px;
+  translate: 0 0.5px; /* the lid makes the box top-heavy */
 }
 .side-item-row:hover .side-archive,
 .side-archive:focus-visible,
@@ -823,7 +839,7 @@ pre {
   gap: 6px;
   max-width: 100%;
   min-width: 0;
-  padding: 2px 6px;
+  padding: 2px 4px 2px 6px; /* the pencil's own air pads its side */
   border-radius: 6px;
   font-family: var(--mono);
   font-size: 12px;
@@ -1348,6 +1364,7 @@ pre {
 .thread-badge-icon {
   display: inline-flex;
   flex: none;
+  margin-left: -0.5px; /* the glyph's inner air is ~0.5px wider than a letter's side bearing: its ink lines up with the text above */
   color: var(--accent);
 }
 .thread-badge-count {
@@ -1416,6 +1433,10 @@ pre {
   display: inline-flex;
   flex: none;
   color: var(--faint);
+}
+/* Leading a row in the text column: ink flush with the text above, as on .thread-badge-icon. */
+.step-line .step-icon {
+  margin-left: -0.5px;
 }
 .step-name {
   position: relative;
@@ -1716,6 +1737,7 @@ pre {
 }
 .t-icon-swap .t-icon {
   grid-area: 1 / 1;
+  display: flex; /* no line box: an inline icon would sit on the text baseline, above the centre */
   transition:
     opacity   var(--icon-swap-dur) var(--icon-swap-ease),
     filter    var(--icon-swap-dur) var(--icon-swap-ease),
@@ -2435,7 +2457,7 @@ pre {
   padding: 6px 6px 6px 10px;
   border: 1px solid var(--border);
   border-left: 2px solid var(--accent);
-  border-radius: 6px;
+  border-radius: 10px; /* rounder toward its 6px buttons (6 + 6 inset); tuned by eye, since the text usually wraps and the inset grows */
   background: var(--bg-soft);
   font-size: 12.5px;
   animation: promote-nudge-in 300ms var(--panel-ease);
@@ -2481,6 +2503,14 @@ pre {
 .thread-panel .conv-head .btn.icon-only {
   width: 28px;
   padding: 0;
+}
+/* Icon and label: the icon's own inner air already pads its side, so that side takes 2px less. */
+.thread-panel .conv-head .btn:not(.icon-only) {
+  padding-left: 6px;
+}
+/* Reset's arrow and Delete's lid carry their weight high: both sit half a pixel lower. */
+.confirm-btn svg {
+  translate: 0 0.5px;
 }
 /* Reset / Delete: icon only until armed, then the question in red. */
 .confirm-btn {
@@ -2643,7 +2673,7 @@ details.step-prompt pre {
   width: 100%;
   text-align: left;
   padding: 7px 10px;
-  border-radius: 6px;
+  border-radius: 8px; /* concentric with the 12px modal: 12 - 4 padding */
 }
 .palette-item.sel {
   background: var(--accent-soft);
@@ -2837,7 +2867,7 @@ details.step-prompt pre {
   right: 0;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px; /* concentric with its 6px items: 6 + 4 padding (+ the border) */
   box-shadow: var(--shadow);
   padding: 4px;
   max-height: 260px;
