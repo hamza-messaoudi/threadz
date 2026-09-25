@@ -11,6 +11,7 @@ import { useThread } from '../lib/useThread.ts';
 import { DirButton, EditableTitle } from './ConvHeader.tsx';
 import { MessageMarkdown, useParsed } from '../markdown/MessageMarkdown.tsx';
 import { Composer } from './Composer.tsx';
+import { ContentsHost } from './DocContents.tsx';
 import { useDocumentDrop, useDocumentPicker } from './DocumentDrop.tsx';
 import { SCROLL_INTENT } from './DocumentMessage.tsx';
 import { MessageList, type Passage } from './MessageList.tsx';
@@ -227,105 +228,107 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
   const closePanel = useCallback(() => navigate({ view: 'conversation', conversationId: conversation.id }), [conversation.id]);
   return (
     <div className={`conversation ${conversation.yolo ? 'yolo' : ''}`}>
-      <div className="conv-main" {...drop.bind}>
-        <header className="conv-head">
-          <EditableTitle conversation={conversation} />
-          {conversation.yolo && <span className="yolo-label">YOLO</span>}
-          {t.data?.thread.moved ? (
-            <>
-              <span className="conv-dir moved" title={`This thread was moved to ${t.data.thread.cwd}`}>
-                → {tildify(t.data.thread.cwd, config?.homeDir)}
-              </span>
-              <button className="btn ghost small" onClick={() => api.patch(`/api/threads/${conversation.rootThreadId}`, { dir: null })} data-tooltip={`Run in ${conversation.dir ?? 'the scratch folder'} again`}>
-                Move back
-              </button>
-            </>
-          ) : conversation.kind === 'channel' ? (
-            <DirButton conversation={conversation} />
-          ) : (
-            conversation.dir && (
-              <span className="conv-dir" title={conversation.dir}>
-                {tildify(conversation.dir, config?.homeDir)}
-              </span>
-            )
-          )}
-          <span className="spacer" />
-          {routine && (
-            <button className="btn small" onClick={() => api.post(`/api/routines/${encodeURIComponent(routine.name)}/run`)} disabled={routine.status === 'running'}>
-              <SwapText text={routine.status === 'running' ? 'Running…' : 'Run now'} />
-            </button>
-          )}
-        </header>
-        <div className="scroll-host" onMouseUp={onMouseUp} onMouseDown={() => setPending(null)}>
-        <ScrollArea messages={t.messages} focusId={route.threadId ? undefined : route.messageId}>
-          <SkeletonReveal loaded={!t.loading} skeleton={<MessageSkeleton />}>
-            {!t.loading && t.data?.origin && <OriginCard data={t.data} />}
-            {t.loading ? null : t.messages.length === 0 ? (
-              <EmptyConversation conversation={conversation} onFile={drop.run} />
+      <ContentsHost>
+        <div className="conv-main" {...drop.bind}>
+          <header className="conv-head">
+            <EditableTitle conversation={conversation} />
+            {conversation.yolo && <span className="yolo-label">YOLO</span>}
+            {t.data?.thread.moved ? (
+              <>
+                <span className="conv-dir moved" title={`This thread was moved to ${t.data.thread.cwd}`}>
+                  → {tildify(t.data.thread.cwd, config?.homeDir)}
+                </span>
+                <button className="btn ghost small" onClick={() => api.patch(`/api/threads/${conversation.rootThreadId}`, { dir: null })} data-tooltip={`Run in ${conversation.dir ?? 'the scratch folder'} again`}>
+                  Move back
+                </button>
+              </>
+            ) : conversation.kind === 'channel' ? (
+              <DirButton conversation={conversation} />
             ) : (
-              <MessageList
-                messages={t.messages}
-                childThreads={t.childThreads}
-                runs={t.runs}
-                onOpenThread={openThread}
-                onExtendPassage={extendPassage}
-                allowThreads
-                activeSource={route.threadId ? activeSource : null}
-                pending={pick}
-                focusId={route.threadId ? undefined : route.messageId}
-              />
+              conversation.dir && (
+                <span className="conv-dir" title={conversation.dir}>
+                  {tildify(conversation.dir, config?.homeDir)}
+                </span>
+              )
             )}
-          </SkeletonReveal>
-        </ScrollArea>
+            <span className="spacer" />
+            {routine && (
+              <button className="btn small" onClick={() => api.post(`/api/routines/${encodeURIComponent(routine.name)}/run`)} disabled={routine.status === 'running'}>
+                <SwapText text={routine.status === 'running' ? 'Running…' : 'Run now'} />
+              </button>
+            )}
+          </header>
+          <div className="scroll-host" onMouseUp={onMouseUp} onMouseDown={() => setPending(null)}>
+          <ScrollArea messages={t.messages} focusId={route.threadId ? undefined : route.messageId}>
+            <SkeletonReveal loaded={!t.loading} skeleton={<MessageSkeleton />}>
+              {!t.loading && t.data?.origin && <OriginCard data={t.data} />}
+              {t.loading ? null : t.messages.length === 0 ? (
+                <EmptyConversation conversation={conversation} onFile={drop.run} />
+              ) : (
+                <MessageList
+                  messages={t.messages}
+                  childThreads={t.childThreads}
+                  runs={t.runs}
+                  onOpenThread={openThread}
+                  onExtendPassage={extendPassage}
+                  allowThreads
+                  activeSource={route.threadId ? activeSource : null}
+                  pending={pick}
+                  focusId={route.threadId ? undefined : route.messageId}
+                />
+              )}
+            </SkeletonReveal>
+          </ScrollArea>
+          </div>
+          <Composer
+            draftKey={conversation.rootThreadId}
+            conversation={conversation}
+            defaultAgent={t.defaultAgent}
+            cwd={t.data?.thread.cwd}
+            placeholder={`Message ${conversation.kind === 'chat' ? conversation.name : '#' + conversation.name}`}
+            onSend={send}
+            onDocument={shareDoc}
+            autoFocus
+          />
+          {drop.overlay}
         </div>
-        <Composer
-          draftKey={conversation.rootThreadId}
-          conversation={conversation}
-          defaultAgent={t.defaultAgent}
-          cwd={t.data?.thread.cwd}
-          placeholder={`Message ${conversation.kind === 'chat' ? conversation.name : '#' + conversation.name}`}
-          onSend={send}
-          onDocument={shareDoc}
-          autoFocus
-        />
-        {drop.overlay}
-      </div>
-      {panel.shown && (
-        <ThreadPanel
-          key={panel.shown}
-          threadId={panel.shown}
-          phase={panel.phase}
-          conversation={conversation}
-          focusId={route.messageId}
-          onClose={closePanel}
-          onSource={setActiveSource}
-          doc={panel.shown === route.threadId ? docNav : null}
-          enter={navDir?.id === panel.shown ? navDir.dir : undefined}
-        />
-      )}
-      {pending && pick && (
-        <button
-          className="floating-thread-btn"
-          style={{ left: pending.x, top: pending.y }}
-          disabled={!!pick.channel}
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => {
-            const m = t.messages.find((x) => x.id === pending.messageId);
-            window.getSelection()?.removeAllRanges();
-            if (m) openThread(m, pending.start, pending.end);
-          }}
-        >
-          <span className="step-icon">{pick.channel ? ICONS.hash : ICONS.thread}</span>
-          {pick.channel ? (
-            <span className="floating-thread-label">Part of this became #{pick.channel}</span>
-          ) : (
-            <>
-              <span className="floating-thread-label">{pick.opens ? 'Open thread' : pick.threads > 1 ? 'Merge threads' : pick.threads ? 'Add to thread' : 'Reply in thread'}</span>
-              <span className="step-arg prose">{pick.end > pick.start ? `${pick.end - pick.start + 1} paragraphs` : '1 paragraph'}</span>
-            </>
-          )}
-        </button>
-      )}
+        {panel.shown && (
+          <ThreadPanel
+            key={panel.shown}
+            threadId={panel.shown}
+            phase={panel.phase}
+            conversation={conversation}
+            focusId={route.messageId}
+            onClose={closePanel}
+            onSource={setActiveSource}
+            doc={panel.shown === route.threadId ? docNav : null}
+            enter={navDir?.id === panel.shown ? navDir.dir : undefined}
+          />
+        )}
+        {pending && pick && (
+          <button
+            className="floating-thread-btn"
+            style={{ left: pending.x, top: pending.y }}
+            disabled={!!pick.channel}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => {
+              const m = t.messages.find((x) => x.id === pending.messageId);
+              window.getSelection()?.removeAllRanges();
+              if (m) openThread(m, pending.start, pending.end);
+            }}
+          >
+            <span className="step-icon">{pick.channel ? ICONS.hash : ICONS.thread}</span>
+            {pick.channel ? (
+              <span className="floating-thread-label">Part of this became #{pick.channel}</span>
+            ) : (
+              <>
+                <span className="floating-thread-label">{pick.opens ? 'Open thread' : pick.threads > 1 ? 'Merge threads' : pick.threads ? 'Add to thread' : 'Reply in thread'}</span>
+                <span className="step-arg prose">{pick.end > pick.start ? `${pick.end - pick.start + 1} paragraphs` : '1 paragraph'}</span>
+              </>
+            )}
+          </button>
+        )}
+      </ContentsHost>
     </div>
   );
 }

@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
 import { act, cleanup, render } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ChildThread, Message } from '../web/src/lib/api.ts';
 import { chunkBlocks, chunkOf, docMeta, isMarkdownFile, outline, pickFile, readingTime, sectionAt, shareDocument, trailAt } from '../web/src/lib/document.ts';
+import { ContentsHost, useContents } from '../web/src/components/DocContents.tsx';
 import { DocumentMessage } from '../web/src/components/DocumentMessage.tsx';
+import { SidebarContext } from '../web/src/lib/useSidebar.ts';
 import { parseMessage } from '../web/src/markdown/parse.ts';
 
 /** A long document: chapters (h2) with sections (h3), each a few paragraphs, a list and a code block. */
@@ -163,5 +166,69 @@ describe('DocumentMessage', () => {
     });
     expect(container.querySelector('.doc-threads-btn')?.textContent).toContain('2');
     expect(container.querySelectorAll('.doc-tick')).toHaveLength(2);
+  });
+});
+
+describe('contents pane', () => {
+  /** The app shell's sidebar: the remembered choice, and a borrow that holds it on the rail. */
+  function Shell({ chosen: initial, log }: { chosen: boolean; log: boolean[] }) {
+    const [chosen, setChosen] = useState(initial);
+    const [borrowed, setBorrowed] = useState(false);
+    const collapsed = chosen || borrowed;
+    log.push(collapsed);
+    const expand = () => {
+      setBorrowed(false);
+      setChosen(false);
+    };
+    return (
+      <SidebarContext.Provider value={{ collapsed, borrow: setBorrowed }}>
+        <button id="expand" onClick={expand} />
+        <ContentsHost>
+          <Doc />
+        </ContentsHost>
+      </SidebarContext.Provider>
+    );
+  }
+  function Doc() {
+    const c = useContents()!;
+    const open = c.openId === 'doc1';
+    return (
+      <>
+        <button id="toggle" onClick={() => c.toggle('doc1')} data-open={open} />
+        <button id="publish" onClick={() => c.publish({ id: 'doc1', name: 'h.md', headings: [{ index: 0, level: 1, text: 'Handbook' }], threads: [], jump: () => {} })} />
+      </>
+    );
+  }
+  const click = async (el: Element | null) =>
+    act(async () => {
+      (el as HTMLElement).click();
+      await new Promise((r) => setTimeout(r, 20));
+    });
+
+  it('takes the open sidebar’s space and gives it back on close', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    const log: boolean[] = [];
+    const { container } = render(<Shell chosen={false} log={log} />);
+    await click(container.querySelector('#toggle'));
+    await click(container.querySelector('#publish'));
+    expect(log.at(-1)).toBe(true);
+    expect(container.querySelector('.contents-pane')).not.toBeNull();
+    expect(container.querySelector('.contents-item')?.textContent).toBe('Handbook');
+    await click(container.querySelector('#toggle'));
+    expect(log.at(-1)).toBe(false);
+    expect(container.querySelector('#toggle')?.getAttribute('data-open')).toBe('false');
+  });
+
+  it('leaves a collapsed sidebar collapsed, and closes when the sidebar is expanded', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false }));
+    const log: boolean[] = [];
+    const { container } = render(<Shell chosen={true} log={log} />);
+    await click(container.querySelector('#toggle'));
+    await click(container.querySelector('#toggle'));
+    expect(log.at(-1)).toBe(true);
+    await click(container.querySelector('#toggle'));
+    await click(container.querySelector('#expand'));
+    expect(log.at(-1)).toBe(false);
+    expect(container.querySelector('#toggle')?.getAttribute('data-open')).toBe('false');
   });
 });

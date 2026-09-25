@@ -3066,24 +3066,151 @@ details.step-prompt pre {
   text-transform: uppercase;
   color: var(--faint);
 }
-.doc-toc-item {
-  font-size: 13px;
-  text-wrap: pretty;
-}
-.doc-toc-item[data-level='1'] {
-  font-weight: 600;
-}
-.doc-toc-item[data-level='3'] {
-  padding-left: 24px;
-  color: var(--muted);
-}
-.doc-toc-item.sel {
-  color: var(--accent);
-}
 .doc-thread-item .dd-title {
   font-size: 13px;
   display: block;
   text-wrap: pretty;
+}
+/* A document's contents: a pane on the left that takes the sidebar's space (DocContents.tsx). */
+.contents-pane {
+  width: 0;
+  flex: none;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+  background: var(--side-bg);
+  --contents-w: 272px;
+}
+.contents-pane.is-open {
+  width: var(--contents-w);
+}
+/* Fixed width, so the headings never reflow while the column opens or closes. */
+.contents-inner {
+  width: calc(var(--contents-w) - 1px);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  --panel-translate-x: -24px;
+}
+.contents-head {
+  gap: 8px;
+  padding: 8px 10px 8px 16px;
+}
+.contents-icon {
+  flex: none;
+  color: var(--accent);
+}
+.contents-title {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.contents-title h2 {
+  font-size: 14px;
+  line-height: 1.2;
+}
+.contents-name {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.contents-list {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 8px 24px;
+}
+.contents-item {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 10px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 13px;
+  line-height: 1.35;
+  color: var(--muted);
+  transition:
+    background-color 150ms ease-out,
+    color 150ms ease-out;
+}
+.contents-item[data-level='1'] {
+  color: var(--text);
+  font-weight: 600;
+}
+.contents-item[data-level='2'] {
+  color: var(--text);
+}
+.contents-item[data-level='2']:not(:first-child) {
+  margin-top: 6px;
+}
+.contents-item[data-level='3'] {
+  padding-left: 22px;
+}
+.contents-item:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+/* Where the reader is: accent text and a rail on the left edge. */
+.contents-item.sel {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+.contents-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 150ms ease-out;
+}
+.contents-item.sel::before {
+  opacity: 1;
+}
+.contents-text {
+  flex: 1;
+  min-width: 0;
+  text-wrap: pretty;
+}
+.contents-threads {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: none;
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.contents-threads svg {
+  width: 12px;
+  height: 12px;
+}
+@media (max-width: 640px) {
+  /* Phones: the pane slides over the conversation, next to the rail. */
+  .contents-pane {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: var(--rail-w);
+    z-index: 44;
+    --contents-w: min(300px, calc(100vw - var(--rail-w)));
+  }
+  .contents-pane.is-open {
+    box-shadow: var(--shadow);
+  }
 }
 /* Folding animates one screenful (accordion timing); the rest is off screen either way. */
 .doc-fold[data-fold] {

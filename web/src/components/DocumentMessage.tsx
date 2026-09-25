@@ -7,6 +7,7 @@ import { durationVar } from '../lib/usePresence.ts';
 import type { Block } from '../markdown/blocks.ts';
 import { MarkdownBlocks, useParsed } from '../markdown/MessageMarkdown.tsx';
 import type { Parsed } from '../markdown/parse.ts';
+import { useContents } from './DocContents.tsx';
 import { ICONS } from './icons.tsx';
 import { relTime, useBlockRenderer, type MessageProps } from './Message.tsx';
 import { PopNumber, SwapText } from './transitions.tsx';
@@ -66,6 +67,8 @@ export const DocumentMessage = memo(function DocumentMessage(props: MessageProps
   const body = useRef<HTMLDivElement>(null);
   const [folded, setFolded] = useFolded(m.id);
   const fold = useRef<HTMLDivElement>(null);
+  const contents = useContents();
+  const contentsOpen = contents?.openId === m.id;
 
   // ---- windowing: which chunks are rendered ----
   const n = doc?.chunks.length ?? 0;
@@ -142,6 +145,11 @@ export const DocumentMessage = memo(function DocumentMessage(props: MessageProps
     return settle(scroller, target);
   }, [jump]);
 
+  // The contents pane (ConversationView) lists this document's headings while it is open for it.
+  useEffect(() => {
+    if (contentsOpen && doc) contents!.publish({ id: m.id, name: meta.name, headings: doc.headings, threads, jump: (index) => jumpTo(index, 'start') });
+  }, [contentsOpen, doc, threads, meta.name]);
+
   // A thread opened elsewhere (the panel's previous / next, a link): bring its passage into view.
   useEffect(() => {
     if (!activeRange || !doc || folded) return;
@@ -160,6 +168,7 @@ export const DocumentMessage = memo(function DocumentMessage(props: MessageProps
   // off screen either way, and tweening tens of thousands of pixels would just be a blur.
   const opening = useRef(false);
   const toggleFold = () => {
+    if (!folded && contentsOpen) contents!.close();
     const scroller = scrollerOf(root.current);
     const wrap = fold.current;
     if (folded || !scroller || !wrap || reducedMotion()) {
@@ -220,8 +229,10 @@ export const DocumentMessage = memo(function DocumentMessage(props: MessageProps
         doc={doc}
         threads={threads}
         folded={folded}
+        contentsOpen={contentsOpen}
+        onContents={() => contents?.toggle(m.id)}
+        onAt={contentsOpen ? contents!.setAt : undefined}
         onFold={toggleFold}
-        onJump={jumpTo}
         onPast={scrollPast}
         onOpenThread={(t) => onOpenThread?.(m, t.blockIndex, t.blockEnd)}
       />
@@ -341,21 +352,24 @@ interface HeaderProps {
   doc: Doc | null;
   threads: ChildThread[];
   folded: boolean;
+  contentsOpen: boolean;
+  onContents: () => void;
+  /** Told the heading at the reading line while the contents pane follows this document. */
+  onAt?: (at: number) => void;
   onFold: () => void;
-  onJump: (index: number, how?: Jump['how'], smooth?: boolean) => void;
   onPast: (where: 'before' | 'after') => void;
   onOpenThread: (t: ChildThread) => void;
 }
 
 /** Sticks to the top while the document is on screen: title, current section, progress, and its menus. */
-function DocHeader({ headRef, rootRef, bodyRef, meta, sharedAt, parsed, doc, threads, folded, onFold, onJump, onPast, onOpenThread }: HeaderProps) {
+function DocHeader({ headRef, rootRef, bodyRef, meta, sharedAt, parsed, doc, threads, folded, contentsOpen, onContents, onAt, onFold, onPast, onOpenThread }: HeaderProps) {
   const [stuck, setStuck] = useState(false);
   // The jumps around the document only help when it is longer than the screen.
   const [long, setLong] = useState(false);
   const [first, setFirst] = useState(true);
   // The heading of the block at the reading line, and the one above it.
   const [at, setAt] = useState(-1);
-  const [menu, setMenu] = useState<'contents' | 'threads' | null>(null);
+  const [menu, setMenu] = useState<'threads' | null>(null);
   const bar = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -399,14 +413,9 @@ function DocHeader({ headRef, rootRef, bodyRef, meta, sharedAt, parsed, doc, thr
   const words = meta.words.toLocaleString();
   const trail = doc && at >= 0 ? trailAt(doc.headings, at) : '';
   const sub = stuck && trail ? trail : `shared ${time(sharedAt)} · ${words} words · ${readingTime(meta.words)}${threads.length ? ` · ${threads.length} ${threads.length === 1 ? 'thread' : 'threads'}` : ''}`;
-  // Opening the contents shows where you are in them.
-  const menuRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    // Scrolls the menu only: scrollIntoView would move the conversation under it too.
-    const list = menuRef.current;
-    const sel = list?.querySelector<HTMLElement>('.sel');
-    if (menu === 'contents' && list && sel) list.scrollTop = sel.offsetTop - (list.clientHeight - sel.offsetHeight) / 2;
-  }, [menu]);
+  useEffect(() => {
+    onAt?.(at);
+  }, [at, onAt]);
   const menuView = useDropdown(menu);
   useMenuDismiss(!!menu, headRef, () => setMenu(null));
   const where = (index: number) => (doc ? doc.offsets[index] / doc.chars : 0);
@@ -422,7 +431,7 @@ function DocHeader({ headRef, rootRef, bodyRef, meta, sharedAt, parsed, doc, thr
       </div>
       <span className="doc-actions">
         {!folded && doc && doc.headings.length > 1 && (
-          <button className={`doc-btn ${menu === 'contents' ? 'on' : ''}`} onClick={() => setMenu(menu === 'contents' ? null : 'contents')} data-tooltip="Contents" aria-label="Contents" aria-expanded={menu === 'contents'}>
+          <button className={`doc-btn ${contentsOpen ? 'on' : ''}`} onClick={onContents} data-tooltip={contentsOpen ? 'Close contents' : 'Contents'} aria-label="Contents" aria-expanded={contentsOpen}>
             <ListDashes size={16} />
           </button>
         )}
@@ -469,52 +478,30 @@ function DocHeader({ headRef, rootRef, bodyRef, meta, sharedAt, parsed, doc, thr
         </span>
       )}
       {menuView.shown && (
-        <div ref={menuRef} className={`doc-menu ${menuView.className}`} data-origin="top-right" role="menu">
-          {menuView.shown === 'contents' && doc ? (
-            <>
-              <div className="doc-menu-title">Contents</div>
-              {doc.headings.map((h) => (
-                <button
-                  key={h.index}
-                  className={`dd-item doc-toc-item ${at === h.index ? 'sel' : ''}`}
-                  data-level={h.level}
-                  role="menuitem"
-                  onClick={() => {
-                    setMenu(null);
-                    onJump(h.index, 'start');
-                  }}
-                >
-                  {h.text || '—'}
-                </button>
-              ))}
-            </>
-          ) : (
-            <>
-              <div className="doc-menu-title">
-                {threads.length} {threads.length === 1 ? 'thread' : 'threads'} on this document
-              </div>
-              {threads.map((t) => {
-                const sec = doc ? sectionAt(doc.headings, t.blockIndex) : null;
-                return (
-                  <button
-                    key={t.id}
-                    className="dd-item doc-thread-item"
-                    role="menuitem"
-                    onClick={() => {
-                      setMenu(null);
-                      onOpenThread(t);
-                    }}
-                  >
-                    <span className="dd-title">{parsed ? excerpt(parsed.blocks, t.blockIndex) : 'Passage'}</span>
-                    <span className="dd-sub">
-                      {sec && sec.index !== t.blockIndex ? `${sec.text} · ` : ''}
-                      {t.channel ? `became #${t.channel.name}` : `${t.replyCount} ${t.replyCount === 1 ? 'reply' : 'replies'} · ${relTime(t.lastActivity)}`}
-                    </span>
-                  </button>
-                );
-              })}
-            </>
-          )}
+        <div className={`doc-menu ${menuView.className}`} data-origin="top-right" role="menu">
+          <div className="doc-menu-title">
+            {threads.length} {threads.length === 1 ? 'thread' : 'threads'} on this document
+          </div>
+          {threads.map((t) => {
+            const sec = doc ? sectionAt(doc.headings, t.blockIndex) : null;
+            return (
+              <button
+                key={t.id}
+                className="dd-item doc-thread-item"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(null);
+                  onOpenThread(t);
+                }}
+              >
+                <span className="dd-title">{parsed ? excerpt(parsed.blocks, t.blockIndex) : 'Passage'}</span>
+                <span className="dd-sub">
+                  {sec && sec.index !== t.blockIndex ? `${sec.text} · ` : ''}
+                  {t.channel ? `became #${t.channel.name}` : `${t.replyCount} ${t.replyCount === 1 ? 'reply' : 'replies'} · ${relTime(t.lastActivity)}`}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

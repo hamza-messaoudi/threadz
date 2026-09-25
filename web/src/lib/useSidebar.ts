@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 
 const KEY = 'agent-chat.sidebar';
 
@@ -27,3 +27,10 @@ export function useSidebarCollapsed() {
   }, [collapsed]);
   return [collapsed, setCollapsed] as const;
 }
+
+/**
+ * The sidebar as panes that borrow its space see it (a document's contents). A borrow collapses it to
+ * the rail without changing the remembered choice, so ending the borrow brings back what was there.
+ */
+export const SidebarContext = createContext<{ collapsed: boolean; borrow: (on: boolean) => void }>({ collapsed: false, borrow: () => {} });
+export const useSidebar = () => useContext(SidebarContext);
