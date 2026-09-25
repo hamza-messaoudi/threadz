@@ -53,7 +53,7 @@ function Rail(props: { onSearch: () => void; onNewChannel: () => void }) {
   return (
     <div className="rail">
       <button className="rail-btn" onClick={props.onSearch} data-tooltip={`Search (${shortcut('K')})`} data-tooltip-side="right" aria-label="Search">
-        <MagnifyingGlass size={16} aria-hidden />
+        <MagnifyingGlass size={16} className="rail-search-icon" aria-hidden />
       </button>
       <button className="rail-btn" onClick={() => navigate({ view: 'conversation', conversationId: 'new' })} data-tooltip="New chat" data-tooltip-side="right" aria-label="New chat">
         <NotePencil size={16} aria-hidden />

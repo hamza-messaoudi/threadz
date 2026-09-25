@@ -343,6 +343,10 @@ pre {
   background: var(--bg-hover);
   color: var(--text);
 }
+/* The lens carries the magnifier's weight up and to the left: a quarter pixel back toward the centre. */
+.rail-search-icon {
+  translate: 0.25px 0.25px;
+}
 @media (prefers-reduced-motion: reduce) {
   .app {
     transition: none;
@@ -1360,6 +1364,7 @@ pre {
 .thread-badge-icon {
   display: inline-flex;
   flex: none;
+  margin-left: -0.5px; /* the glyph's inner air is ~0.5px wider than a letter's side bearing: its ink lines up with the text above */
   color: var(--accent);
 }
 .thread-badge-count {
@@ -1428,6 +1433,10 @@ pre {
   display: inline-flex;
   flex: none;
   color: var(--faint);
+}
+/* Leading a row in the text column: ink flush with the text above, as on .thread-badge-icon. */
+.step-line .step-icon {
+  margin-left: -0.5px;
 }
 .step-name {
   position: relative;
@@ -2448,7 +2457,7 @@ pre {
   padding: 6px 6px 6px 10px;
   border: 1px solid var(--border);
   border-left: 2px solid var(--accent);
-  border-radius: 6px;
+  border-radius: 10px; /* rounder toward its 6px buttons (6 + 6 inset); tuned by eye, since the text usually wraps and the inset grows */
   background: var(--bg-soft);
   font-size: 12.5px;
   animation: promote-nudge-in 300ms var(--panel-ease);
@@ -2664,7 +2673,7 @@ details.step-prompt pre {
   width: 100%;
   text-align: left;
   padding: 7px 10px;
-  border-radius: 6px;
+  border-radius: 8px; /* concentric with the 12px modal: 12 - 4 padding */
 }
 .palette-item.sel {
   background: var(--accent-soft);

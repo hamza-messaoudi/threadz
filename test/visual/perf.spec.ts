@@ -7,7 +7,7 @@ import { openLab } from './lab.ts';
 // Performance budgets from the Comark plan (Phase 8). Numbers are printed and recorded in NOTES.md.
 // Needs the harness with VISUAL_BULK=200,500 (npm run test:perf).
 const TOKEN = 'a'.repeat(48);
-const seeded = () => JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'ac-visual-4799.json'), 'utf8'));
+const seeded = () => JSON.parse(fs.readFileSync(path.join(os.tmpdir(), `ac-visual-${process.env.VISUAL_PORT ?? 4799}.json`), 'utf8'));
 
 test('open a channel with 200 messages including 40 figures: under 300 ms from data to rendered', async ({ page }) => {
   const bulkId = seeded().bulkIds['200'];

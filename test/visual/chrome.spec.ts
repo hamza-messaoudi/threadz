@@ -4,7 +4,7 @@ import path from 'node:path';
 import { expect, test } from '@playwright/test';
 
 // The app chrome around messages. Markdown output is masked, so this stays valid while the renderer changes.
-const seeded = () => JSON.parse(fs.readFileSync(path.join(os.tmpdir(), 'ac-visual-4799.json'), 'utf8'));
+const seeded = () => JSON.parse(fs.readFileSync(path.join(os.tmpdir(), `ac-visual-${process.env.VISUAL_PORT ?? 4799}.json`), 'utf8'));
 
 for (const scheme of ['light', 'dark'] as const) {
   test(`chrome ${scheme}`, async ({ page }) => {
