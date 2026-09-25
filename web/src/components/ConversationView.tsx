@@ -204,7 +204,7 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
     const src = docSource;
     const meta = docMeta(src);
     if (!open || !src || !meta) return null;
-    const list = t.childThreads.filter((c) => c.parentMessageId === src.id && !c.channel).sort((a, b) => a.blockIndex - b.blockIndex || a.blockEnd - b.blockEnd);
+    const list = t.childThreads.filter((c) => c.parentMessageId === src.id && !c.channel && c.blockIndex >= 0).sort((a, b) => a.blockIndex - b.blockIndex || a.blockEnd - b.blockEnd);
     const i = list.findIndex((c) => c.id === open.id);
     const parsed = docSource ? docParsed : null;
     const go = (to: ChildThread | undefined, dir: 'up' | 'down') =>
@@ -217,7 +217,7 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
       name: meta.name,
       section: (parsed && sectionAt(outline(parsed.blocks), open.blockIndex)?.text) || null,
       index: i,
-      total: list.length,
+      total: i < 0 ? 0 : list.length,
       onPrev: go(list[i - 1], 'up'),
       onNext: go(list[i + 1], 'down'),
     };
@@ -466,11 +466,16 @@ export function ScrollArea({ messages, children, focusId }: { messages: Message[
   };
   useEffect(() => () => cancelAnimationFrame(glide.current.frame), []);
 
-  // A jump inside a document (contents, threads, fold) is the reader's own scroll, like a wheel.
+  // A jump inside a document (contents, threads, fold, an editor opening) is the reader's own scroll,
+  // like a wheel: the view stops following the bottom at once, before the content it is about resizes.
   useEffect(() => {
     const el = ref.current;
-    el?.addEventListener(SCROLL_INTENT, touched);
-    return () => el?.removeEventListener(SCROLL_INTENT, touched);
+    const intent = () => {
+      touched();
+      pinned.current = false;
+    };
+    el?.addEventListener(SCROLL_INTENT, intent);
+    return () => el?.removeEventListener(SCROLL_INTENT, intent);
   }, []);
 
   const last = messages[messages.length - 1];
