@@ -118,18 +118,32 @@ export function makePdf(spec: PdfSpec): Buffer {
   return Buffer.from(out, 'latin1');
 }
 
-const WORDS =
-  'the index keeps every write in order so a reader can replay it later while the planner weighs each cost against the budget and the cache holds pages that are read often'.split(
-    ' ',
-  );
+const SENTENCES = [
+  'Every write lands in the log before it reaches a table, so a reader can replay the day in order.',
+  'The planner weighs each index against the cost of keeping it current under a steady stream of updates.',
+  'Pages that are read often stay in the cache, and cold ones are dropped when memory runs short.',
+  'Compaction runs at night, when traffic is low, and merges small files into larger sorted runs.',
+  'A replica that falls behind catches up from the log rather than from a full copy of the data.',
+  'Latency at the ninety-fifth percentile stayed flat while the number of requests grew by two thirds.',
+  'Budgets are set per route, and a route over budget blocks its release until it is back under.',
+  'The search rollout was the only budget broken this quarter, by about twenty kilobytes.',
+  'Backups are restored once a week into a scratch cluster, and the restore time is tracked like any metric.',
+  'Schema changes ship behind a flag, so a slow migration can be paused without a rollback.',
+];
 
-/** Deterministic filler prose: `n` words starting at word `seed`. */
+/** Deterministic filler prose: about `n` words starting at sentence `seed`. */
 export function prose(seed: number, n: number): string {
   const out: string[] = [];
-  for (let i = 0; i < n; i++) out.push(WORDS[(seed * 7 + i * 3) % WORDS.length]);
-  const s = out.join(' ');
-  return `${s[0].toUpperCase()}${s.slice(1)}.`;
+  let words = 0;
+  for (let i = seed; words < n; i++) {
+    const s = SENTENCES[i % SENTENCES.length];
+    out.push(s);
+    words += s.split(' ').length;
+  }
+  return out.join(' ');
 }
+
+const lower = (s: string) => s[0].toLowerCase() + s.slice(1);
 
 /** A report of `pages` pages: a chapter heading every few pages, sections, paragraphs and a list. */
 export function reportPdf(pages: number, opts: { outline?: boolean; title?: string } = {}): Buffer {
@@ -142,8 +156,8 @@ export function reportPdf(pages: number, opts: { outline?: boolean; title?: stri
     blocks.push({ kind: 'p', text: `Page ${p + 1} opens here. ${prose(p, 60)}` });
     blocks.push({ kind: 'p', text: prose(p + 1, 70) });
     if (p % 3 === 1) {
-      blocks.push({ kind: 'li', text: `First point on page ${p + 1}: ${prose(p + 2, 14)}` });
-      blocks.push({ kind: 'li', text: `Second point on page ${p + 1}: ${prose(p + 3, 22)}` });
+      blocks.push({ kind: 'li', text: `First point on page ${p + 1}: ${lower(prose(p + 2, 14))}` });
+      blocks.push({ kind: 'li', text: `Second point on page ${p + 1}: ${lower(prose(p + 3, 22))}` });
     }
     blocks.push({ kind: 'p', text: `${prose(p + 4, 50)} Page ${p + 1} ends here.` });
     spec.pages.push({ blocks });

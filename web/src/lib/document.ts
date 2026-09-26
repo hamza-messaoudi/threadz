@@ -2,6 +2,7 @@
 import type { Node } from '../../../shared/markdown.ts';
 import type { Block } from '../markdown/blocks.ts';
 import { api, type Message } from './api.ts';
+import { isPdfFile, uploadPdf } from './pdf.ts';
 
 export interface DocMeta {
   kind: 'document';
@@ -13,17 +14,22 @@ export interface DocMeta {
 export const docMeta = (m: Pick<Message, 'meta'> | undefined | null): DocMeta | null => (m?.meta?.kind === 'document' ? (m.meta as DocMeta) : null);
 
 export const isMarkdownFile = (f: { name: string }) => /\.(md|markdown)$/i.test(f.name);
+/** What can be shared as a document: Markdown, or a PDF (read-only, lib/pdf.ts). */
+export const isDocumentFile = (f: { name: string; type?: string }) => isMarkdownFile(f) || isPdfFile(f);
+/** "report", from "report.pdf" or "notes.md". */
+export const bareName = (name: string) => name.replace(/\.(md|markdown|pdf)$/i, '');
 
-/** Reads a dropped or picked file and shares it in the thread. Only Markdown is accepted. */
+/** Reads a dropped or picked file and shares it in the thread. Markdown goes as text, a PDF as its bytes. */
 export async function shareDocument(threadId: string, file: File): Promise<Message> {
-  if (!isMarkdownFile(file)) throw new Error(`${file.name} is not a Markdown document (.md)`);
+  if (isPdfFile(file)) return uploadPdf<Message>(threadId, file);
+  if (!isMarkdownFile(file)) throw new Error(`${file.name} is not a Markdown or PDF document`);
   return api.post<Message>(`/api/threads/${threadId}/documents`, { name: file.name, content: await file.text() });
 }
 
-/** The first Markdown file in a drop or paste, or the first file (to say why it was refused). */
+/** The first document in a drop or paste, or the first file (to say why it was refused). */
 export function pickFile(list: FileList | null | undefined): File | null {
   const files = Array.from(list ?? []);
-  return files.find(isMarkdownFile) ?? files[0] ?? null;
+  return files.find(isDocumentFile) ?? files[0] ?? null;
 }
 
 /** "12 min read", "3 h 40 min read" at 230 words a minute. */

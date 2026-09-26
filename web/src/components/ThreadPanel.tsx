@@ -1,4 +1,4 @@
-import { CaretDown, CaretUp, FileMd } from '@phosphor-icons/react';
+import { CaretDown, CaretUp, FileMd, FilePdf } from '@phosphor-icons/react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { api, type Conversation, type Mention } from '../lib/api.ts';
 import { agentColor } from '../lib/store.tsx';
@@ -43,6 +43,8 @@ export interface DocNav {
   total: number;
   onPrev?: () => void;
   onNext?: () => void;
+  /** A PDF: its passages are plain text, quoted as such. */
+  pdf?: boolean;
 }
 
 interface Props {
@@ -148,7 +150,7 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
           <div className="quote-head">
             {doc ? (
               <span className="quote-doc">
-                <FileMd size={14} aria-hidden />
+                {doc.pdf ? <FilePdf size={14} aria-hidden /> : <FileMd size={14} aria-hidden />}
                 <span className="quote-doc-name">{doc.name}</span>
                 {doc.section && <span className="quote-doc-section">· {doc.section}</span>}
               </span>
@@ -175,7 +177,15 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
             </button>
           </div>
           <div ref={quoteBody} className="quote-clip t-resize">
-            <MessageMarkdown id={`quote:${threadId}`} content={info.blockText} className="quote-body" />
+            {doc?.pdf ? (
+              <div className="quote-body quote-plain">
+                {info.blockText.split('\n\n').map((p, i) => (
+                  <p key={i}>{p}</p>
+                ))}
+              </div>
+            ) : (
+              <MessageMarkdown id={`quote:${threadId}`} content={info.blockText} className="quote-body" />
+            )}
           </div>
         </div>
       )}

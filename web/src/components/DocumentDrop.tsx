@@ -1,6 +1,6 @@
-import { FileMd } from '@phosphor-icons/react';
+import { FileText } from '@phosphor-icons/react';
 import { useEffect, useRef, useState, type DragEvent } from 'react';
-import { isMarkdownFile, pickFile } from '../lib/document.ts';
+import { isDocumentFile, pickFile } from '../lib/document.ts';
 import { usePresence } from '../lib/usePresence.ts';
 
 type DropState = { kind: 'drag' } | { kind: 'busy'; name: string } | { kind: 'error'; message: string };
@@ -23,7 +23,7 @@ export function useDocumentDrop(onFile: (file: File) => Promise<void>, where: st
   }, [state]);
 
   const run = async (file: File) => {
-    if (!isMarkdownFile(file)) return setState({ kind: 'error', message: `${file.name} is not a Markdown document. Only .md files can be added.` });
+    if (!isDocumentFile(file)) return setState({ kind: 'error', message: `${file.name} is not a document. Only Markdown (.md) and PDF files can be added.` });
     setState({ kind: 'busy', name: file.name });
     try {
       await onFile(file);
@@ -65,11 +65,11 @@ export function useDocumentDrop(onFile: (file: File) => Promise<void>, where: st
   const overlay = shown && (
     <div className={`doc-drop ${phase === 'open' ? 'is-open' : ''} ${shown.kind}`} role="status" aria-live="polite">
       <div className="doc-drop-card">
-        <FileMd size={28} className="doc-drop-icon" aria-hidden />
+        <FileText size={28} className="doc-drop-icon" aria-hidden />
         {shown.kind === 'drag' ? (
           <>
             <strong>Drop to read it here</strong>
-            <span className="muted">A Markdown document {where}. Select any paragraph to start a thread on it.</span>
+            <span className="muted">A Markdown or PDF document {where}. Select any paragraph to start a thread on it.</span>
           </>
         ) : shown.kind === 'busy' ? (
           <strong className="doc-drop-busy">Adding {shown.name}…</strong>
@@ -82,14 +82,14 @@ export function useDocumentDrop(onFile: (file: File) => Promise<void>, where: st
   return { bind, overlay, run, busy: state?.kind === 'busy' };
 }
 
-/** A hidden file input for Markdown documents; `open` shows the system picker. */
+/** A hidden file input for documents (Markdown, PDF); `open` shows the system picker. */
 export function useDocumentPicker(onFile: (file: File) => void) {
   const ref = useRef<HTMLInputElement>(null);
   const input = (
     <input
       ref={ref}
       type="file"
-      accept=".md,.markdown,text/markdown"
+      accept=".md,.markdown,text/markdown,.pdf,application/pdf"
       hidden
       onChange={(e) => {
         const file = e.target.files?.[0];

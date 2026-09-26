@@ -1,7 +1,8 @@
-import { FileMd } from '@phosphor-icons/react';
+import { FileMd, FilePdf, FileText } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 import { api, type Conversation } from '../lib/api.ts';
-import { isMarkdownFile, pickFile, shareDocument } from '../lib/document.ts';
+import { bareName, isDocumentFile, pickFile, shareDocument } from '../lib/document.ts';
+import { isPdfFile, MAX_PDF_BYTES } from '../lib/pdf.ts';
 import { useModal } from '../lib/useModal.ts';
 import { useErrorShake } from './transitions.tsx';
 import { navigate } from '../lib/router.ts';
@@ -23,12 +24,14 @@ export function NewChannelDialog({ onClose }: { onClose: () => void }) {
 
   // A channel that opens on a document; unnamed, it takes the document's title.
   const chooseDoc = async (file: File) => {
-    if (!isMarkdownFile(file)) return setError(`${file.name} is not a Markdown document (.md)`);
-    if (file.size > 2_000_000) return setError(`${file.name} is too large (over 2 MB)`);
+    if (!isDocumentFile(file)) return setError(`${file.name} is not a Markdown (.md) or PDF document`);
+    const max = isPdfFile(file) ? MAX_PDF_BYTES : 2_000_000;
+    if (file.size > max) return setError(`${file.name} is too large (over ${max / 1_000_000} MB)`);
     setDoc(file);
     if (!name.trim()) {
-      const title = /^\s*#\s+(.+?)\s*#*\s*$/.exec((await file.text()).split('\n').find((l) => l.trim()) ?? '')?.[1];
-      setName((n) => n || slugify(title ?? file.name.replace(/\.(md|markdown)$/i, '')));
+      // A PDF's title is only known once the server has read it: the file name stands in.
+      const title = isPdfFile(file) ? null : /^\s*#\s+(.+?)\s*#*\s*$/.exec((await file.text()).split('\n').find((l) => l.trim()) ?? '')?.[1];
+      setName((n) => n || slugify(title ?? bareName(file.name)));
     }
   };
   const picker = useDocumentPicker(chooseDoc);
@@ -79,7 +82,7 @@ export function NewChannelDialog({ onClose }: { onClose: () => void }) {
           <span>Start from a document (optional)</span>
           {doc ? (
             <div className="doc-chosen">
-              <FileMd size={16} aria-hidden />
+              {isPdfFile(doc) ? <FilePdf size={16} aria-hidden /> : <FileMd size={16} aria-hidden />}
               <code>{doc.name}</code>
               <span className="muted">{Math.max(1, Math.round(doc.size / 1024)).toLocaleString()} KB</span>
               <span className="spacer" />
@@ -89,7 +92,7 @@ export function NewChannelDialog({ onClose }: { onClose: () => void }) {
             </div>
           ) : (
             <button type="button" className="folder-suggestion" onClick={picker.open}>
-              <FileMd size={14} aria-hidden /> Choose a Markdown file <span className="muted">or drop it here</span>
+              <FileText size={14} aria-hidden /> Choose a Markdown or PDF file <span className="muted">or drop it here</span>
             </button>
           )}
           {picker.input}

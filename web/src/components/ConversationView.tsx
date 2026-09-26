@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { FileMd } from '@phosphor-icons/react';
+import { FileText } from '@phosphor-icons/react';
 import { api, type ChildThread, type Conversation, type Mention, type Message, type ThreadData } from '../lib/api.ts';
 import { tildify } from '../lib/dirs.ts';
-import { docMeta, outline, sectionAt, shareDocument } from '../lib/document.ts';
+import { bareName, docMeta, outline, sectionAt, shareDocument } from '../lib/document.ts';
+import { isPdfDoc, pdfBlocksOf, usePdfLayout } from '../lib/pdf.ts';
+import { pageSpan } from '../../../shared/pdf.ts';
 import { navigate, type Route } from '../lib/router.ts';
 import { play } from '../lib/sound.ts';
 import { useAppData } from '../lib/store.tsx';
@@ -55,7 +57,7 @@ function NewChat() {
     const c = await api.post<Conversation>('/api/conversations', { kind: 'chat' });
     const doc = await shareDocument(c.rootThreadId, file);
     const meta = docMeta(doc)!;
-    upsertConversation({ ...c, name: (meta.title ?? meta.name.replace(/\.(md|markdown)$/i, '')).slice(0, 40) });
+    upsertConversation({ ...c, name: (meta.title ?? bareName(meta.name)).slice(0, 40) });
     navigate({ view: 'conversation', conversationId: c.id }, true);
   };
   const drop = useDocumentDrop(shareDoc, 'as a new chat');
@@ -146,8 +148,10 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
       const m = threadable(msgEl.dataset.messageId);
       if (!blocks.length || !m) return setPending(null);
       const inMsg = (el: HTMLElement | null | undefined) => (el && msgEl.contains(el) ? el.closest<HTMLElement>('[data-block]') : null);
-      let first = inMsg(startEl) ?? blocks[0]; // selection began above the first block
-      let last = inMsg(elOf(range.endContainer)) ?? blocks[blocks.length - 1]; // or ended past this message
+      // Began or ended outside a block (above the first, past this message, a PDF page's margin): the
+      // first / last block the selection covers.
+      let first = inMsg(startEl) ?? blocks.find((b) => range.intersectsNode(b)) ?? blocks[0];
+      let last = inMsg(elOf(range.endContainer)) ?? blocks.findLast((b) => range.intersectsNode(b)) ?? blocks[blocks.length - 1];
       // Dragging to the very start of the next paragraph (or from the very end of one) selects no text there.
       const touches = (b: HTMLElement) => {
         const r = document.createRange();
@@ -197,8 +201,11 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
   const [navDir, setNavDir] = useState<{ id: string; dir: 'up' | 'down' } | null>(null);
   const openChild = route.threadId ? t.childThreads.find((c) => c.id === route.threadId) : undefined;
   const docSource = openChild && t.messages.find((m) => m.id === openChild.parentMessageId && docMeta(m));
-  // The document is parsed (and cached) for its own view already; this reads the same tree.
-  const docParsed = useParsed(docSource?.id ?? '', docSource?.content ?? '', false);
+  // The document is parsed (and cached) for its own view already; this reads the same tree. A PDF's
+  // headings come with its layout instead (also cached).
+  const docPdf = isPdfDoc(docMeta(docSource));
+  const docParsed = useParsed(docSource && !docPdf ? docSource.id : '', docSource && !docPdf ? docSource.content : '', false);
+  const docLayout = usePdfLayout(docMeta(docSource));
   const docNav = useMemo<DocNav | null>(() => {
     const open = openChild;
     const src = docSource;
@@ -213,6 +220,12 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
         setNavDir({ id: to.id, dir });
         navigate({ view: 'conversation', conversationId: conversation.id, threadId: to.id });
       });
+    if (isPdfDoc(meta)) {
+      const blocks = pdfBlocksOf(src.id, src.content);
+      const page = pageSpan(blocks[open.blockIndex]?.page ?? 1, blocks[open.blockEnd]?.page ?? blocks[open.blockIndex]?.page ?? 1);
+      const heading = docLayout && docLayout.contents !== 'pages' ? sectionAt(docLayout.headings, open.blockIndex)?.text : null;
+      return { name: meta.name, pdf: true, section: heading ? `${page} · ${heading}` : page, index: i, total: list.length, onPrev: go(list[i - 1], 'up'), onNext: go(list[i + 1], 'down') };
+    }
     return {
       name: meta.name,
       section: (parsed && sectionAt(outline(parsed.blocks), open.blockIndex)?.text) || null,
@@ -221,7 +234,7 @@ function Loaded({ conversation, route }: { conversation: Conversation; route: Ro
       onPrev: go(list[i - 1], 'up'),
       onNext: go(list[i + 1], 'down'),
     };
-  }, [openChild, docSource, docParsed, t.childThreads, conversation.id]);
+  }, [openChild, docSource, docParsed, docLayout, t.childThreads, conversation.id]);
 
   // The thread panel stays mounted while it slides out (transitions.dev panel reveal).
   const panel = usePresence(route.threadId, '--panel-close-dur', 350);
@@ -408,10 +421,10 @@ function DocumentHint({ className, onFile }: { className?: string; onFile: (file
   return (
     <div className={`doc-hint ${className ?? ''}`}>
       <button className="btn doc-hint-btn" onClick={picker.open}>
-        <FileMd size={16} aria-hidden />
-        Read a Markdown document
+        <FileText size={16} aria-hidden />
+        Read a document
       </button>
-      <span className="muted">or drop a .md file here, then thread on any paragraph.</span>
+      <span className="muted">or drop a Markdown or PDF file here, then thread on any paragraph.</span>
       {picker.input}
     </div>
   );
@@ -466,11 +479,16 @@ export function ScrollArea({ messages, children, focusId }: { messages: Message[
   };
   useEffect(() => () => cancelAnimationFrame(glide.current.frame), []);
 
-  // A jump inside a document (contents, threads, fold) is the reader's own scroll, like a wheel.
+  // A jump inside a document (contents, threads, fold) is the reader's own scroll, like a wheel. It
+  // unpins at once: pages growing in the same frame (a PDF's) must not pull the view back down.
   useEffect(() => {
     const el = ref.current;
-    el?.addEventListener(SCROLL_INTENT, touched);
-    return () => el?.removeEventListener(SCROLL_INTENT, touched);
+    const intent = () => {
+      touched();
+      pinned.current = false;
+    };
+    el?.addEventListener(SCROLL_INTENT, intent);
+    return () => el?.removeEventListener(SCROLL_INTENT, intent);
   }, []);
 
   const last = messages[messages.length - 1];

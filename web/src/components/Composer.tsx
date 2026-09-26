@@ -17,7 +17,7 @@ interface Props {
   cwd?: string;
   placeholder: string;
   onSend: (text: string, mentions: Mention[]) => Promise<void>;
-  /** Shares a Markdown document here (the button, or a pasted .md file). */
+  /** Shares a document here (the button, or a pasted .md or .pdf file). */
   onDocument?: (file: File) => Promise<void>;
   autoFocus?: boolean;
 }
@@ -417,7 +417,7 @@ export function Composer({ draftKey, conversation, defaultAgent, cwd, placeholde
         <div className="composer-bar">
           {onDocument && (
             <>
-              <button className="attach-btn" onClick={picker.open} disabled={attaching} data-tooltip="Add a Markdown document · or drop a .md file here" aria-label="Add a Markdown document">
+              <button className="attach-btn" onClick={picker.open} disabled={attaching} data-tooltip="Add a Markdown or PDF document · or drop it here" aria-label="Add a document">
                 <FilePlus size={16} />
               </button>
               {picker.input}

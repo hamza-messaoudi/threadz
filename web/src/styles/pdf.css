@@ -1,0 +1,355 @@
+/* A shared PDF (PdfDocument.tsx): pages of paper in the reading column, a selectable text layer from
+   pdf.js, and the thread marks drawn on the page under the text. The header, fold and jumps are the
+   Markdown document's (styles.css, "doc-"). */
+
+.pdf-body {
+  --paper: #ffffff;
+  --paper-edge: oklch(0 0 0 / 0.1);
+  --paper-shadow: 0 1px 2px oklch(0 0 0 / 0.06), 0 4px 14px -6px oklch(0 0 0 / 0.14);
+  /* The page stays paper in the dark theme, a little dimmer so it does not glare. */
+  --paper-dim: none;
+  --mark-active: color-mix(in srgb, var(--accent) 16%, transparent);
+  --mark-pending: color-mix(in srgb, var(--text) 9%, transparent);
+  --mark-hover: color-mix(in srgb, var(--text) 5%, transparent);
+  --rail: color-mix(in srgb, var(--accent) 45%, transparent);
+  --select: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+:root.dark .pdf-body {
+  --paper: #f4f4f1;
+  --paper-edge: oklch(1 0 0 / 0.1);
+  --paper-shadow: 0 0 0 1px oklch(1 0 0 / 0.04), 0 6px 18px -8px oklch(0 0 0 / 0.8);
+  --paper-dim: brightness(0.93);
+  /* On the dimmed paper, marks keep a light-theme ink so they read the same. */
+  --mark-active: color-mix(in srgb, #5b5bd6 18%, transparent);
+  --mark-pending: oklch(0 0 0 / 0.09);
+  --mark-hover: oklch(0 0 0 / 0.05);
+  --select: color-mix(in srgb, #5b5bd6 32%, transparent);
+}
+
+/* The pages column runs through the message's gutters, so the reply buttons and badges beside a
+   page stay inside it when a zoomed page scrolls sideways. */
+.pdf-pages {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--pdf-gap, 16px);
+  margin: 6px -18px 0 -44px;
+  padding: 2px 18px 6px 44px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
+}
+
+.pdf-page {
+  position: relative;
+  flex: none;
+  background: var(--paper);
+  border-radius: 3px;
+  box-shadow: var(--paper-shadow);
+  /* Image outline: pure black / white at 10 %, never tinted. */
+  outline: 1px solid var(--paper-edge);
+  outline-offset: -1px;
+}
+.pdf-page.is-loading {
+  height: auto;
+  background: linear-gradient(100deg, var(--paper) 40%, color-mix(in srgb, var(--paper) 94%, var(--text)) 50%, var(--paper) 60%) 0 0 / 300% 100%;
+  animation: pdf-shimmer 1.6s linear infinite;
+}
+@keyframes pdf-shimmer {
+  to {
+    background-position: -150% 0;
+  }
+}
+
+.pdf-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  filter: var(--paper-dim);
+  opacity: 0;
+  transition: opacity 180ms ease-out;
+}
+.pdf-canvas.is-ready {
+  opacity: 1;
+}
+
+/* The unrotated page, turned into place as pdf.js turns its layers. */
+.pdf-raw {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+}
+.pdf-raw[data-main-rotation='90'] {
+  transform: rotate(90deg) translateY(-100%);
+}
+.pdf-raw[data-main-rotation='180'] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+.pdf-raw[data-main-rotation='270'] {
+  transform: rotate(270deg) translateX(-100%);
+}
+
+/* ---- thread marks: under the text, like a highlighter ---- */
+.pdf-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.pdf-mark {
+  position: absolute;
+  border-radius: 3px;
+  mix-blend-mode: multiply;
+  transition: background-color 150ms ease-out;
+}
+.pdf-mark.is-hover {
+  background: var(--mark-hover);
+}
+.pdf-mark.is-pending {
+  background: var(--mark-pending);
+}
+.pdf-mark.is-active {
+  background: var(--mark-active);
+}
+.pdf-mark.doc-target {
+  animation: pdf-target 1.4s ease-out;
+}
+@keyframes pdf-target {
+  0%,
+  25% {
+    background-color: color-mix(in srgb, var(--accent) 22%, transparent);
+  }
+}
+/* A thread's passage hangs on a rail in the margin, as a Markdown block does. */
+.pdf-rail {
+  position: absolute;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--rail);
+  transition: background-color 200ms ease;
+}
+.pdf-rail.is-on {
+  background: var(--accent);
+}
+.pdf-rail.is-pending {
+  background: color-mix(in srgb, #1b1b21 45%, transparent);
+}
+.pdf-page.over-thread .textLayer :is(span, br) {
+  cursor: pointer;
+}
+
+/* ---- reply button in the gutter, and reply badges beside the passage ---- */
+.pdf-gutter {
+  position: absolute;
+  left: -32px;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--faint);
+  user-select: none;
+  z-index: 3;
+  animation: pdf-gutter-in 150ms ease-out;
+  transition:
+    color 150ms ease,
+    background-color 150ms ease;
+}
+/* A 32px target around the 22px button; the page's left margin is the rest of the way in. */
+.pdf-gutter::after {
+  content: '';
+  position: absolute;
+  inset: -5px -5px -5px -5px;
+}
+.pdf-gutter:hover,
+.pdf-gutter:focus-visible {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+@keyframes pdf-gutter-in {
+  from {
+    opacity: 0;
+    transform: translateX(3px);
+  }
+}
+.pdf-badge {
+  position: absolute;
+  right: auto;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px 0 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: #1b1b21;
+  background: #ffffff;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #5b5bd6 30%, transparent), 0 1px 3px oklch(0 0 0 / 0.12);
+  white-space: nowrap;
+  transition:
+    box-shadow 150ms ease-out,
+    scale 150ms ease-out;
+}
+.pdf-badge.at-edge {
+  right: 6px;
+}
+.pdf-badge:hover {
+  box-shadow: 0 0 0 1px #5b5bd6, 0 2px 6px oklch(0 0 0 / 0.16);
+}
+.pdf-badge:active {
+  scale: 0.96;
+}
+.pdf-badge-icon {
+  display: inline-flex;
+  color: #5b5bd6;
+}
+.pdf-badge-icon svg {
+  width: 13px;
+  height: 13px;
+}
+.pdf-badge.to-channel .pdf-badge-count {
+  max-width: 12ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: var(--mono);
+  font-weight: 400;
+}
+
+/* ---- notes above the pages (a scan, a file that would not open) ---- */
+.pdf-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: 68ch;
+  margin: 4px 0 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.45;
+  text-wrap: pretty;
+  color: var(--text);
+  background: var(--warn-soft);
+}
+.pdf-note svg {
+  flex: none;
+  margin-top: 1px;
+  color: var(--warn);
+}
+.pdf-note.is-error {
+  background: var(--danger-soft);
+}
+.pdf-note.is-error svg {
+  color: var(--danger);
+}
+
+/* ---- zoom, in the document header ---- */
+.pdf-zoom {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 4px;
+  padding-right: 6px;
+  box-shadow: 1px 0 0 var(--border);
+}
+.pdf-zoom-pct {
+  min-width: 50px;
+}
+.doc-btn:disabled {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ---- pdf.js text layer (from pdfjs-dist/web/pdf_viewer.css, the parts a read-only layer needs) ---- */
+.pdf-page .textLayer {
+  color-scheme: only light;
+  position: absolute;
+  text-align: initial;
+  inset: 0;
+  overflow: clip;
+  opacity: 1;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 1;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.pdf-page .textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+.pdf-page .textLayer > :not(.markedContent, .pdf-para),
+.pdf-page .textLayer .pdf-para > span,
+.pdf-page .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.pdf-page .textLayer :is(.markedContent, .pdf-para) {
+  display: contents;
+}
+.pdf-page .textLayer ::selection {
+  background: var(--select);
+  color: transparent;
+}
+.pdf-page .textLayer br::selection {
+  background: transparent;
+}
+.pdf-page .textLayer .endOfContent {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+.pdf-page .textLayer.selecting .endOfContent {
+  top: 0;
+}
+
+@media (max-width: 640px) {
+  .pdf-pages {
+    --pdf-gap: 12px;
+  }
+  .pdf-gutter {
+    left: -30px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pdf-page.is-loading,
+  .pdf-mark.doc-target,
+  .pdf-gutter {
+    animation: none;
+  }
+  .pdf-canvas {
+    transition: none;
+  }
+}
+
+/* A PDF passage quoted in its thread: the text as extracted, not read as Markdown. */
+.quote-plain {
+  font-size: 13.5px;
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.quote-plain p + p {
+  margin-top: 0.6em;
+}
