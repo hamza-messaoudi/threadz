@@ -1,5 +1,6 @@
 import type { MessageRow } from '../db/queries.ts';
 import { DOCUMENT_EDIT_HELP, documentMeta, renderDocument } from './documents.ts';
+import { isPdfMeta } from './pdf.ts';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -21,7 +22,7 @@ export function authorLabel(m: Pick<MessageRow, 'author_kind' | 'author_id'>, se
 export function formatLine(m: MessageRow, selfAgent?: string, now?: number): string {
   const head = `[${authorLabel(m, selfAgent)} ${stamp(m.created_at, now)}]`;
   const doc = documentMeta(m);
-  if (doc) return `${head} shared the document "${doc.name}":\n${renderDocument(doc, m.content_md)}\n${DOCUMENT_EDIT_HELP}`;
+  if (doc) return `${head} shared the document "${doc.name}":\n${renderDocument(doc, m.content_md)}${isPdfMeta(doc) ? '' : `\n${DOCUMENT_EDIT_HELP}`}`;
   return `${head} ${[m.content_md.trim(), ...editNotes(m)].filter(Boolean).join(' ')}`;
 }
 

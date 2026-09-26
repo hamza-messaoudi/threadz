@@ -5,6 +5,8 @@ import { maxSeq, renderMessage, renderUpdate, selectDelta } from '../context/del
 import { docVersion, DOCUMENT_EDIT_HELP, documentMeta, READER_MIN_CHARS, renderDocumentUpdate, renderReaderNote, type DocumentMeta } from '../context/documents.ts';
 import { applyAgentEdits, parseDocumentEdits } from '../core/documents.ts';
 import { renderSeed } from '../context/seed.ts';
+import { isPdfMeta } from '../context/pdf.ts';
+import { pageSpan, pdfBlocks } from '../../shared/pdf.ts';
 import type { ConversationRow, MessageRow, SessionRow, ThreadRow } from '../db/queries.ts';
 import { serializeMessage } from '../core/serialize.ts';
 import { sessionKey, KeyedMutex } from './locks.ts';
@@ -557,8 +559,8 @@ export class TurnRunner {
     let seen = 0;
     for (const d of docs) {
       if ((d.done_seq ?? 0) > session.last_seen_seq) continue;
-      seen++;
       const meta = documentMeta(d)!;
+      if (!isPdfMeta(meta)) seen++;
       const had = known?.[d.id] ?? 1;
       const now = docVersion(meta);
       if (had >= now) continue;
@@ -613,9 +615,19 @@ export function renderThreadContext(thread: ThreadRow, source: MessageRow | unde
   const doc = documentMeta(source);
   if (doc) {
     const since = thread.anchor === 'removed' ? `An edit has since removed ${passage} from the document, as quoted.\n` : thread.anchor === 'changed' ? `An edit has since changed ${passage}; the quote is how it read before.\n` : '';
-    return `<thread_context>\n${opened} of the document "${doc.name}" they shared earlier (its full text is above in this conversation):\n${quoted}\n${since}Answer with the whole document in mind, not only ${passage}. The main discussion continues separately.\n</thread_context>\n\n${DOCUMENT_EDIT_HELP}`;
+    // A PDF cannot be edited: its threads get no editing instructions.
+    const help = isPdfMeta(doc) ? '' : `\n\n${DOCUMENT_EDIT_HELP}`;
+    return `<thread_context>\n${opened}${pdfPages(source!, thread)} of the document "${doc.name}" they shared earlier (its full text is above in this conversation):\n${quoted}\n${since}Answer with the whole document in mind, not only ${passage}. The main discussion continues separately.\n</thread_context>${help}`;
   }
   return `<thread_context>\n${opened} from an earlier message by ${author}:\n${quoted}\nFocus on ${passage}. The main discussion continues separately.\n</thread_context>`;
+}
+
+/** " (page 4)": where a passage of a shared PDF sits; nothing for a Markdown document. */
+function pdfPages(source: MessageRow, thread: ThreadRow): string {
+  if (!isPdfMeta(documentMeta(source)) || thread.block_index == null) return '';
+  const blocks = pdfBlocks(source.content_md);
+  const from = blocks[thread.block_index]?.page;
+  return from ? ` (${pageSpan(from, blocks[thread.block_end ?? thread.block_index]?.page ?? from)})` : '';
 }
 
 /** Routine channels: a new session only sees messages after the latest run header. */

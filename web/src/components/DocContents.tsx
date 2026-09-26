@@ -1,4 +1,4 @@
-import { FileMd } from '@phosphor-icons/react';
+import { FileMd, FilePdf } from '@phosphor-icons/react';
 import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { ChildThread } from '../lib/api.ts';
 import { sectionAt, type Heading } from '../lib/document.ts';
@@ -10,6 +10,8 @@ import { ICONS } from './icons.tsx';
 export interface ContentsSource {
   id: string;
   name: string;
+  /** A PDF's contents (its outline, headings, or pages). */
+  pdf?: boolean;
   headings: Heading[];
   threads: ChildThread[];
   jump: (index: number) => void;
@@ -106,7 +108,7 @@ function ContentsPane({ source, at, phase, onClose }: { source: ContentsSource; 
     <aside className={`contents-pane t-resize ${phase === 'open' ? 'is-open' : ''}`} inert={phase === 'closing'} aria-label={`Contents of ${source.name}`}>
       <div className="contents-inner t-panel-slide" data-axis="x" data-open={phase === 'open'}>
         <header className="conv-head contents-head">
-          <FileMd size={16} className="contents-icon" aria-hidden />
+          {source.pdf ? <FilePdf size={16} className="contents-icon" aria-hidden /> : <FileMd size={16} className="contents-icon" aria-hidden />}
           <div className="contents-title">
             <h2>Contents</h2>
             <span className="contents-name">{source.name}</span>

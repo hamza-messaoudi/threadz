@@ -2,6 +2,7 @@ import type { AppContext } from '../app.ts';
 import { blocksCached } from '../context/blocks.ts';
 import { matchSeq } from '../context/diff.ts';
 import { docVersion, documentMeta, MAX_DOCUMENT_CHARS, describeDocument, type DocumentMeta } from '../context/documents.ts';
+import { isPdfMeta } from '../context/pdf.ts';
 import type { DocVersionRow, MessageRow, ThreadRow } from '../db/queries.ts';
 import { KeyedMutex } from '../runner/locks.ts';
 import { HttpError } from './dispatch.ts';
@@ -79,6 +80,7 @@ async function edit(ctx: AppContext, messageId: string, input: EditInput): Promi
   const doc = store.getMessage(messageId);
   const meta = documentMeta(doc);
   if (!doc || !meta) throw new HttpError(404, 'document not found');
+  if (isPdfMeta(meta)) throw new HttpError(400, `${meta.name} is a PDF: PDFs are read-only.`);
   const current = docVersion(meta);
   const base = input.base ?? current;
   if (!Number.isInteger(base) || base < 1 || base > current) throw new HttpError(400, `no version ${input.base}`);
@@ -364,9 +366,11 @@ export function editableDocuments(ctx: AppContext, thread: ThreadRow): MessageRo
   const { store } = ctx;
   const out: MessageRow[] = [];
   const source = thread.parent_message_id ? store.getMessage(thread.parent_message_id) : undefined;
-  if (source && documentMeta(source)) out.push(source);
+  // PDFs are read-only: never an agent's to edit.
+  const editable = (m: MessageRow | undefined): m is MessageRow => !!documentMeta(m) && !isPdfMeta(documentMeta(m));
+  if (editable(source)) out.push(source);
   const root = store.rootThread(thread.conversation_id);
-  for (const m of store.listMessages(root.id).reverse()) if (documentMeta(m) && m.id !== source?.id) out.push(m);
+  for (const m of store.listMessages(root.id).reverse()) if (editable(m) && m.id !== source?.id) out.push(m);
   return out;
 }
 
@@ -381,7 +385,8 @@ export async function applyAgentEdits(ctx: AppContext, thread: ThreadRow, agent:
     const doc = e.name ? docs.find((d) => documentMeta(d)!.name.toLowerCase() === e.name!.toLowerCase()) : docs.length === 1 || thread.parent_message_id === docs[0]?.id ? docs[0] : undefined;
     const name = doc ? documentMeta(doc)!.name : (e.name ?? 'the document');
     if (!doc) {
-      results.push({ name, documentId: null, status: 'failed', error: e.name ? `There is no document named ${e.name} here.` : 'Say which document to edit (name="…").' });
+      const pdf = e.name && /\.pdf$/i.test(e.name);
+      results.push({ name, documentId: null, status: 'failed', error: pdf ? `${e.name} is a PDF: PDFs are read-only.` : e.name ? `There is no document named ${e.name} here.` : 'Say which document to edit (name="…").' });
       continue;
     }
     if (!e.ops.length && e.content === undefined) {

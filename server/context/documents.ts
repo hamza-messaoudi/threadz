@@ -1,5 +1,6 @@
 import type { MessageRow } from '../db/queries.ts';
 import { unifiedDiff } from './diff.ts';
+import { isPdfMeta, renderPdf } from './pdf.ts';
 
 /**
  * A shared Markdown document is a user message with meta.kind 'document': it sits in the timeline like
@@ -56,6 +57,8 @@ export const docVersion = (meta: Pick<DocumentMeta, 'version'> | null | undefine
  * as before documents could be edited).
  */
 export function renderDocument(meta: Pick<DocumentMeta, 'name' | 'version'>, content: string): string {
+  // A PDF is read-only: one version, rendered with its pages (server/context/pdf.ts).
+  if (isPdfMeta(meta)) return renderPdf(meta, content);
   const v = docVersion(meta) > 1 ? ` version="${docVersion(meta)}"` : '';
   return `<document name="${attr(meta.name)}"${v}>\n${content.trim()}\n</document>`;
 }
@@ -87,7 +90,9 @@ export function renderSharedDocuments(docs: MessageRow[]): string {
     docs.length === 1
       ? 'The user shared this document in the conversation. It is complete; answer from all of it.'
       : 'The user shared these documents in the conversation. Each is complete; answer from all of them.';
-  return `<shared_documents>\n${head}\n\n${body}\n</shared_documents>\n\n${DOCUMENT_EDIT_HELP}`;
+  // Editing is taught only when something here can be edited (a PDF cannot).
+  const editable = docs.some((m) => !isPdfMeta(documentMeta(m)));
+  return `<shared_documents>\n${head}\n\n${body}\n</shared_documents>${editable ? `\n\n${DOCUMENT_EDIT_HELP}` : ''}`;
 }
 
 /** Up to this share of the document, an update shows the changes; past it (or for a short document), the whole new text. */

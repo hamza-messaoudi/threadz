@@ -72,8 +72,10 @@ describe('document structure', () => {
     expect(readingTime(49_706)).toBe('3 h 36 min read');
     expect(isMarkdownFile({ name: 'Spec.MD' })).toBe(true);
     expect(isMarkdownFile({ name: 'spec.pdf' })).toBe(false);
-    const list = [new File(['x'], 'a.pdf'), new File(['# b'], 'b.md')] as unknown as FileList;
+    // PDFs are documents too; a file of another kind is picked only to say why it was refused.
+    const list = [new File(['x'], 'a.png'), new File(['# b'], 'b.md')] as unknown as FileList;
     expect(pickFile(list)?.name).toBe('b.md');
+    expect(pickFile([new File(['x'], 'a.png'), new File(['x'], 'c.pdf')] as unknown as FileList)?.name).toBe('c.pdf');
     expect(pickFile([new File(['x'], 'a.pdf')] as unknown as FileList)?.name).toBe('a.pdf');
   });
 });
@@ -87,7 +89,7 @@ describe('sharing a document', () => {
     const [url, init] = fetch.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('/api/threads/t1/documents');
     expect(JSON.parse(init.body as string)).toEqual({ name: 'notes.md', content: 'Two words' });
-    await expect(shareDocument('t1', new File(['x'], 'notes.txt'))).rejects.toThrow(/not a Markdown document/);
+    await expect(shareDocument('t1', new File(['x'], 'notes.txt'))).rejects.toThrow(/not a Markdown or PDF document/);
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

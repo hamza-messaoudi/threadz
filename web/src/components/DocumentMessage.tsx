@@ -1,4 +1,4 @@
-import { ArrowLineDown, ArrowLineUp, ArrowsInLineVertical, ArrowsOutLineVertical, ClockCounterClockwise, FileMd, ListDashes, PencilSimple } from '@phosphor-icons/react';
+import { ArrowLineDown, ArrowLineUp, ArrowsInLineVertical, ArrowsOutLineVertical, ClockCounterClockwise, FileMd, FilePdf, ListDashes, PencilSimple } from '@phosphor-icons/react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { ChildThread } from '../lib/api.ts';
 import {
@@ -24,6 +24,7 @@ import {
 } from '../lib/document.ts';
 import { navigate, parseRoute } from '../lib/router.ts';
 import { agentColor } from '../lib/store.tsx';
+import { isPdfDoc } from '../lib/pdf.ts';
 import { useDropdown } from '../lib/useDropdown.ts';
 import { durationVar } from '../lib/usePresence.ts';
 import type { Block } from '../markdown/blocks.ts';
@@ -52,12 +53,12 @@ interface Preview {
 }
 
 const time = (ts: number) => new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-const scrollerOf = (el: Element | null) => el?.closest<HTMLElement>('.messages-scroll') ?? null;
+export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
+export const scrollerOf = (el: Element | null) => el?.closest<HTMLElement>('.messages-scroll') ?? null;
 /** An element's offset in the scroller's content. */
-const offsetIn = (scroller: HTMLElement, el: Element) => scroller.scrollTop + el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+export const offsetIn = (scroller: HTMLElement, el: Element) => scroller.scrollTop + el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
 
-interface Doc {
+export interface Doc {
   chunks: Chunk[];
   headings: Heading[];
   /** Character offset where each block starts, and the total: where a passage sits in the document. */
@@ -311,23 +312,7 @@ export const DocumentMessage = memo(function DocumentMessage(props: MessageProps
     return () => clearTimeout(t);
   }, [folded]);
 
-  const scrollPast = (where: 'before' | 'after') => {
-    const scroller = scrollerOf(root.current);
-    const el = root.current;
-    if (!scroller || !el) return;
-    scroller.dispatchEvent(new Event(SCROLL_INTENT));
-    const prev = el.previousElementSibling;
-    const top =
-      where === 'before'
-        ? prev
-          ? offsetIn(scroller, prev) + prev.getBoundingClientRect().height - scroller.clientHeight + 72
-          : 0
-        : offsetIn(scroller, el) + el.getBoundingClientRect().height - Math.min(scroller.clientHeight * 0.35, 240);
-    if (Math.abs(top - scroller.scrollTop) > scroller.clientHeight * 1.5 && !reducedMotion()) {
-      arrive(scroller.querySelector('.message-list') ?? scroller);
-      scroller.scrollTop = top;
-    } else scroller.scrollTo({ top, behavior: reducedMotion() ? 'auto' : 'smooth' });
-  };
+  const scrollPast = (where: 'before' | 'after') => scrollPastDoc(root.current, where);
 
   // ---- what an edit changed: marked briefly when a new version arrives, or when asked to show it ----
   const flashDue = useRef(false);
@@ -472,6 +457,24 @@ export const DocumentMessage = memo(function DocumentMessage(props: MessageProps
   );
 });
 
+/** Scrolls to the end of the conversation before a document, or just past the document. */
+export function scrollPastDoc(el: HTMLElement | null, where: 'before' | 'after') {
+  const scroller = scrollerOf(el);
+  if (!scroller || !el) return;
+  scroller.dispatchEvent(new Event(SCROLL_INTENT));
+  const prev = el.previousElementSibling;
+  const top =
+    where === 'before'
+      ? prev
+        ? offsetIn(scroller, prev) + prev.getBoundingClientRect().height - scroller.clientHeight + 72
+        : 0
+      : offsetIn(scroller, el) + el.getBoundingClientRect().height - Math.min(scroller.clientHeight * 0.35, 240);
+  if (Math.abs(top - scroller.scrollTop) > scroller.clientHeight * 1.5 && !reducedMotion()) {
+    arrive(scroller.querySelector('.message-list') ?? scroller);
+    scroller.scrollTop = top;
+  } else scroller.scrollTo({ top, behavior: reducedMotion() ? 'auto' : 'smooth' });
+}
+
 /** The first source line of each block (a section is found again by its heading line). */
 function firstLines(content: string, lines: [number, number][]): string[] {
   const src = content.split('\n');
@@ -519,7 +522,7 @@ function PreviewBar({ docId, preview, current, onClose }: { docId: string; previ
 }
 
 /** Folded documents stay folded for this viewer. */
-function useFolded(id: string): [boolean, (v: boolean) => void] {
+export function useFolded(id: string): [boolean, (v: boolean) => void] {
   const key = `doc-folded:${id}`;
   const [folded, set] = useState(() => {
     try {
@@ -568,7 +571,7 @@ const DocChunk = memo(function DocChunk({
 });
 
 /** A far jump lands with a quick cross-blur instead of a long scroll (transitions.dev page slide values). */
-function arrive(el: HTMLElement) {
+export function arrive(el: HTMLElement) {
   el.classList.remove('doc-arrive');
   void el.offsetWidth;
   el.classList.add('doc-arrive');
@@ -600,7 +603,7 @@ function settle(scroller: HTMLElement, target: () => number): () => void {
   };
 }
 
-interface HeaderProps {
+export interface HeaderProps {
   headRef: RefObject<HTMLDivElement | null>;
   rootRef: RefObject<HTMLDivElement | null>;
   bodyRef: RefObject<HTMLDivElement | null>;
@@ -625,16 +628,23 @@ interface HeaderProps {
   onEdit?: (at: number) => void;
   editLabel: string;
   onVersion: (v: DocVersion) => void;
+  /** The block at the reading line, for a body whose blocks are not boxes of their own (a PDF's). */
+  blockAt?: (line: number) => number;
+  /** Replaces the section trail while stuck (a PDF's names its page too). */
+  whereAt?: (block: number) => string;
+  /** More buttons, first in the row (a PDF's zoom). */
+  tools?: ReactNode;
 }
 
 /** Sticks to the top while the document is on screen: title, current section, progress, and its menus. */
-function DocHeader({ headRef, rootRef, bodyRef, docId, meta, sharedAt, parsed, doc, threads, folded, contentsOpen, onContents, onAt, onFold, onPast, onOpenThread, editing, preview, onEdit, editLabel, onVersion }: HeaderProps) {
+export function DocHeader({ headRef, rootRef, bodyRef, docId, meta, sharedAt, parsed, doc, threads, folded, contentsOpen, onContents, onAt, onFold, onPast, onOpenThread, editing, preview, onEdit, editLabel, onVersion, blockAt, whereAt, tools }: HeaderProps) {
   const [stuck, setStuck] = useState(false);
   // The jumps around the document only help when it is longer than the screen.
   const [long, setLong] = useState(false);
   const [first, setFirst] = useState(true);
   // The heading of the block at the reading line, and the one above it.
   const [at, setAt] = useState(-1);
+  const [block, setBlock] = useState(-1);
   const [menu, setMenu] = useState<'threads' | 'history' | null>(null);
   const [versions, setVersions] = useState<DocVersion[] | null>(null);
   const version = docVersion(meta);
@@ -666,11 +676,12 @@ function DocHeader({ headRef, rootRef, bodyRef, docId, meta, sharedAt, parsed, d
       if (bar.current) bar.current.style.transform = `scaleX(${p})`;
       // The section of the block at the reading line, just under the header.
       const line = s.top + headH + 24;
-      let at = -1;
-      for (const b of Array.from(bodyRef.current?.querySelectorAll<HTMLElement>('[data-block]') ?? [])) {
+      let at = blockAt ? blockAt(line) : -1;
+      if (!blockAt) for (const b of Array.from(bodyRef.current?.querySelectorAll<HTMLElement>('[data-block]') ?? [])) {
         if (b.getBoundingClientRect().top > line) break;
         at = Number(b.dataset.block);
       }
+      setBlock(at);
       setAt(at < 0 ? -1 : (sectionAt(doc.headings, at)?.index ?? -1));
     };
     const on = () => {
@@ -688,13 +699,14 @@ function DocHeader({ headRef, rootRef, bodyRef, docId, meta, sharedAt, parsed, d
   }, [doc, folded]);
 
   const words = meta.words.toLocaleString();
-  const trail = doc && at >= 0 ? trailAt(doc.headings, at) : '';
+  const trail = whereAt ? (block >= 0 ? whereAt(block) : '') : doc && at >= 0 ? trailAt(doc.headings, at) : '';
   const when = version > 1 && meta.editedAt ? `version ${version} · edited by ${editorName(meta.editedBy).replace(/^You$/, 'you')} ${relTime(meta.editedAt)}` : `shared ${time(sharedAt)}`;
+  const pages = isPdfDoc(meta) ? `${meta.pages.toLocaleString()} ${meta.pages === 1 ? 'page' : 'pages'} · ` : '';
   const sub = preview
     ? `viewing version ${preview} of ${version}`
     : stuck && trail
       ? trail
-      : `${when} · ${words} words · ${readingTime(meta.words)}${threads.length ? ` · ${threads.length} ${threads.length === 1 ? 'thread' : 'threads'}` : ''}`;
+      : `${when} · ${pages}${words} words · ${readingTime(meta.words)}${threads.length ? ` · ${threads.length} ${threads.length === 1 ? 'thread' : 'threads'}` : ''}`;
   const attached = threads.filter((t) => t.blockIndex >= 0);
   const detached = threads.filter((t) => t.blockIndex < 0);
   useEffect(() => {
@@ -707,13 +719,14 @@ function DocHeader({ headRef, rootRef, bodyRef, docId, meta, sharedAt, parsed, d
   return (
     <div ref={headRef} className="doc-head" data-stuck={stuck && !folded}>
       <span className="doc-icon" aria-hidden>
-        <FileMd size={18} />
+        {isPdfDoc(meta) ? <FilePdf size={18} /> : <FileMd size={18} />}
       </span>
       <div className="doc-title">
         <span className="doc-name">{meta.name}</span>
         <SwapText className="doc-sub" text={sub} />
       </div>
       <span className="doc-actions">
+        {!folded && tools}
         {!folded && doc && doc.headings.length > 1 && (
           <button className={`doc-btn ${contentsOpen ? 'on' : ''}`} onClick={onContents} data-tooltip={contentsOpen ? 'Close contents' : 'Contents'} aria-label="Contents" aria-expanded={contentsOpen}>
             <ListDashes size={16} />
@@ -862,7 +875,7 @@ function DocHeader({ headRef, rootRef, bodyRef, docId, meta, sharedAt, parsed, d
 }
 
 /** Closes a header menu on Esc (before the thread panel sees it) or a press outside the header. */
-function useMenuDismiss(open: boolean, inside: RefObject<HTMLElement | null>, close: () => void) {
+export function useMenuDismiss(open: boolean, inside: RefObject<HTMLElement | null>, close: () => void) {
   useEffect(() => {
     if (!open) return;
     const key = (e: KeyboardEvent) => {

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import type { ChildThread, Message, Run } from '../lib/api.ts';
 import { docMeta } from '../lib/document.ts';
+import { isPdfDoc } from '../lib/pdf.ts';
 import { DocumentMessage } from './DocumentMessage.tsx';
+import { PdfDocumentMessage } from './PdfDocument.tsx';
 import { MessageView, type BlockRange } from './Message.tsx';
 
 /** A run of blocks in one message. */
@@ -39,7 +41,8 @@ export function MessageList({ messages, childThreads, runs, onOpenThread, onExte
   return (
     <div className="message-list">
       {messages.map((m) => {
-        const View = docMeta(m) ? DocumentMessage : MessageView;
+        const meta = docMeta(m);
+        const View = meta ? (isPdfDoc(meta) ? PdfDocumentMessage : DocumentMessage) : MessageView;
         return (
           <View
             key={m.id}

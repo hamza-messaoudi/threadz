@@ -8,7 +8,7 @@ import { COOKIE, guard, loadOrCreateToken, tokenEquals } from './auth.ts';
 import { loadConfig } from './config/load.ts';
 import type { LoadedConfig } from './config/types.ts';
 import { watchConfig } from './config/watch.ts';
-import { defaultAgent, HttpError, moveThread, postDocument, postUserMessage, threadCwd } from './core/dispatch.ts';
+import { defaultAgent, HttpError, moveThread, postDocument, postPdf, postUserMessage, threadCwd } from './core/dispatch.ts';
 import { openPassage, resetThread } from './core/passages.ts';
 import { EditConflict, editDocument, listVersions, versionText, type EditOp } from './core/documents.ts';
 import { publishChildSummary, serializeChildThread, serializeConversation, serializeMessage, serializeRun } from './core/serialize.ts';
@@ -21,6 +21,8 @@ import { compileGate, writeGate } from './gate/compile.ts';
 import { classifyInventory, readToolList } from './gate/inventory.ts';
 import { blocksCached } from './context/blocks.ts';
 import { docVersion, documentMeta } from './context/documents.ts';
+import { isPdfMeta, MAX_PDF_BYTES, pdfjsDir, pdfjsVersion, STORED_FILE_RE } from './context/pdf.ts';
+import { pdfBlocks } from '../shared/pdf.ts';
 import { DirIndex } from './dirs/index.ts';
 import { WorkflowEngine } from './core/workflows.ts';
 import { Scheduler } from './scheduler/scheduler.ts';
@@ -108,6 +110,11 @@ export class AppContext {
   close(): void {
     for (const s of this.stops.splice(0)) s();
     this.store.db.close();
+  }
+
+  /** Shared PDFs and their layouts, by content hash (server/context/pdf.ts). */
+  filesDir(): string {
+    return path.join(this.paths.dataDir, 'files');
   }
 
   scratchDir(): string {
@@ -311,8 +318,14 @@ export function createApp(opts: AppOptions = {}) {
     return c.json(postUserMessage(ctx, c.req.param('id'), body), 201);
   });
 
-  // Shares a Markdown document in the thread: { name: "spec.md", content }.
+  // Shares a Markdown document in the thread: { name: "spec.md", content }. A PDF comes as its bytes
+  // (content-type application/pdf) with ?name=report.pdf.
   app.post('/api/threads/:id/documents', async (c) => {
+    if (/^application\/pdf\b/i.test(c.req.header('content-type') ?? '')) {
+      if (Number(c.req.header('content-length') ?? 0) > MAX_PDF_BYTES) return c.json({ error: `${c.req.query('name') ?? 'The PDF'} is too large (over ${MAX_PDF_BYTES / 1_000_000} MB)` }, 413);
+      const bytes = new Uint8Array(await c.req.arrayBuffer());
+      return c.json(await postPdf(ctx, c.req.param('id'), c.req.query('name'), bytes), 201);
+    }
     const body = await c.req.json();
     const doc = postDocument(ctx, c.req.param('id'), body);
     blocksCached(doc.id, doc.content).catch(() => {}); // the first thread on it needs its blocks
@@ -424,7 +437,8 @@ export function createApp(opts: AppOptions = {}) {
     if (parent.parent_thread_id) return c.json({ error: 'threads cannot be nested' }, 400);
     let blocks: string[];
     try {
-      blocks = await blocksCached(msg.id, msg.content_md);
+      // A PDF's blocks are its paragraphs, one per text block (shared/pdf.ts).
+      blocks = isPdfMeta(documentMeta(msg)) ? pdfBlocks(msg.content_md).map((b) => b.text) : await blocksCached(msg.id, msg.content_md);
     } catch {
       return c.json({ error: 'could not parse this message' }, 400);
     }
@@ -469,6 +483,25 @@ export function createApp(opts: AppOptions = {}) {
     hub.thread(thread.id, 'thread.deleted', { id: thread.id });
     hub.thread(thread.parent_thread_id!, 'thread.removed', { id: thread.id });
     return c.json({ ok: true });
+  });
+
+  // ---- stored files: a shared PDF and its layout, named by content hash, so they never change ----
+  app.get('/api/files/:name', (c) => {
+    const name = c.req.param('name');
+    const file = path.join(ctx.filesDir(), name);
+    if (!STORED_FILE_RE.test(name) || !fs.existsSync(file)) return c.json({ error: 'not found' }, 404);
+    // ?name= lets "open the PDF" show and save it under its own name.
+    const shown = (c.req.query('name') ?? '').replace(/[^\w .()-]/g, '_').slice(0, 120);
+    return immutable(c, name, fs.readFileSync(file), name.endsWith('.pdf') ? 'application/pdf' : 'application/json', shown ? { 'content-disposition': `inline; filename="${shown}"` } : {});
+  });
+
+  // pdf.js's data for the web app's renderer (fonts a PDF does not embed, CMaps, image decoders).
+  app.get('/api/pdfjs/:version/:kind/:file', (c) => {
+    const { version, kind, file } = c.req.param();
+    if (version !== pdfjsVersion || !['standard_fonts', 'cmaps', 'wasm', 'iccs'].includes(kind) || !/^[\w.-]+$/.test(file)) return c.json({ error: 'not found' }, 404);
+    const p = path.join(pdfjsDir, kind, file);
+    if (!fs.existsSync(p)) return c.json({ error: 'not found' }, 404);
+    return immutable(c, `${version}/${kind}/${file}`, fs.readFileSync(p), file.endsWith('.wasm') ? 'application/wasm' : file.endsWith('.js') ? 'text/javascript' : 'application/octet-stream');
   });
 
   app.get('/api/threads/:id/events', (c) => sse(c, `thread:${c.req.param('id')}`));
@@ -520,6 +553,14 @@ export function createApp(opts: AppOptions = {}) {
   return { app, ctx };
 }
 
+/** A file whose content never changes under its name: cached for good, revalidated by name. */
+function immutable(c: any, name: string, data: Buffer, type: string, extra: Record<string, string> = {}) {
+  const etag = `"${name}"`;
+  const headers = { 'content-type': type, 'cache-control': 'private, max-age=31536000, immutable', etag, 'x-content-type-options': 'nosniff', ...extra };
+  if (c.req.header('if-none-match') === etag) return c.body(null, 304, headers);
+  return c.body(data, 200, headers);
+}
+
 /** A thread's source message. A document's text is left out: the thread only needs its name. */
 function serializeSource(m: MessageRow) {
   const out = serializeMessage(m);
@@ -529,6 +570,7 @@ function serializeSource(m: MessageRow) {
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',

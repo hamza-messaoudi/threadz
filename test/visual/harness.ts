@@ -6,6 +6,9 @@ import path from 'node:path';
 import { serve } from '@hono/node-server';
 import { createApp } from '../../server/app.ts';
 import { appRoot } from '../../server/paths.ts';
+import { postPdf } from '../../server/core/dispatch.ts';
+import { pdfBlocks } from '../../shared/pdf.ts';
+import { reportPdf } from '../pdf-fixture.ts';
 
 export const VISUAL_PORT = Number(process.env.VISUAL_PORT ?? 4799);
 export const VISUAL_TOKEN = 'a'.repeat(48);
@@ -65,9 +68,28 @@ const { thread } = store.upsertParagraphThread(reply, 1, '- Availability **99.98
 const tm = store.insertMessage({ thread_id: thread.id, author_kind: 'user', content_md: 'Which week dipped?', status: 'done' });
 store.db.prepare('UPDATE messages SET created_at = ? WHERE id = ?').run(t + 1000, tm.id);
 
+// A channel with a 120-page PDF between two messages, a thread on one of its paragraphs (VISUAL_PDF=0 skips it).
+let pdfIds: { conversationId: string; messageId: string; threadId: string } | null = null;
+if (process.env.VISUAL_PDF !== '0') {
+  const p = store.createConversation({ kind: 'channel', name: 'pdf' });
+  const before = store.insertMessage({ thread_id: p.rootThreadId, author_kind: 'user', content_md: 'Here is the platform report for the review.', status: 'done' });
+  store.db.prepare('UPDATE messages SET created_at = ? WHERE id = ?').run(T0, before.id);
+  const doc = await postPdf(ctx, p.rootThreadId, 'platform-report.pdf', new Uint8Array(reportPdf(120)));
+  store.db.prepare('UPDATE messages SET created_at = ? WHERE id = ?').run(T0 + 60_000, doc.id);
+  const after = store.insertMessage({ thread_id: p.rootThreadId, author_kind: 'agent', author_id: 'researcher', content_md: 'I read the report. Chapter 2 is where the storage numbers are.', status: 'done' });
+  store.db.prepare('UPDATE messages SET created_at = ? WHERE id = ?').run(T0 + 120_000, after.id);
+  const msg = store.getMessage(doc.id)!;
+  const blocks = pdfBlocks(msg.content_md);
+  const at = blocks.findIndex((b) => b.text.startsWith('Page 2 opens here.'));
+  const th = store.upsertParagraphThread(msg, at, blocks[at].text).thread;
+  const q = store.insertMessage({ thread_id: th.id, author_kind: 'user', content_md: 'Why does the log come first?', status: 'done' });
+  store.db.prepare('UPDATE messages SET created_at = ? WHERE id = ?').run(T0 + 180_000, q.id);
+  pdfIds = { conversationId: p.conversation.id, messageId: doc.id, threadId: th.id };
+}
+
 serve({ fetch: app.fetch, hostname: '127.0.0.1', port: VISUAL_PORT }, () => {
   console.log(`visual harness ready http://127.0.0.1:${VISUAL_PORT}/c/${conversation.id}?t=${VISUAL_TOKEN}`);
-  fs.writeFileSync(path.join(os.tmpdir(), `ac-visual-${VISUAL_PORT}.json`), JSON.stringify({ conversationId: conversation.id, threadId: thread.id, bulkIds }));
+  fs.writeFileSync(path.join(os.tmpdir(), `ac-visual-${VISUAL_PORT}.json`), JSON.stringify({ conversationId: conversation.id, threadId: thread.id, bulkIds, pdf: pdfIds }));
 });
 const stop = () => {
   ctx.close();
