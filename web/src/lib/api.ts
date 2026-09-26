@@ -94,6 +94,9 @@ export interface ThreadInfo {
   /** Last quoted block (inclusive); equals blockIndex for a one-paragraph thread. */
   blockEnd: number | null;
   blockText: string | null;
+  /** An edit of the document changed the passage, or removed it (see ChildThread). */
+  anchor?: 'changed' | 'removed' | null;
+  anchorVersion?: number | null;
   /** Where the thread's turns run now. */
   cwd: string;
   /** True after a move away from the default directory. */
@@ -109,6 +112,14 @@ export interface ChildThread {
   lastActivity: number;
   /** Set once the thread became its own channel. */
   channel: { id: string; name: string } | null;
+  /**
+   * An edit of the document changed the passage ('changed': the thread is on what replaced it) or
+   * removed it ('removed': detached, blockIndex < 0). anchorVersion is the version that did it.
+   */
+  anchor?: 'changed' | 'removed' | null;
+  anchorVersion?: number | null;
+  /** A detached thread's quote (its opening), since it is on no block to show it. */
+  quote?: string | null;
 }
 
 /** Where a channel made from a side thread came from. */
@@ -189,6 +200,8 @@ export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
+    /** The error response as sent (e.g. a document conflict's `current`). */
+    readonly body: any = null,
   ) {
     super(message);
   }
@@ -203,12 +216,14 @@ async function req<T>(method: string, url: string, body?: unknown): Promise<T> {
   });
   if (!res.ok) {
     let msg = res.statusText;
+    let body: any = null;
     try {
-      msg = (await res.json()).error ?? msg;
+      body = await res.json();
+      msg = body.error ?? msg;
     } catch {
       // not json
     }
-    throw new ApiError(msg, res.status);
+    throw new ApiError(msg, res.status, body);
   }
   return res.json() as Promise<T>;
 }

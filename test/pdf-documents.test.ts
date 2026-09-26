@@ -241,3 +241,33 @@ describe('threads on a PDF', () => {
     expect(stdin).toContain('open the file with the Read tool');
   });
 });
+
+describe('PDFs are read-only', () => {
+  it('refuses edits and restores, and says why when an agent tries one', async () => {
+    const { t, sharePdf, thread } = await setup();
+    const doc = (await sharePdf(reportPdf(2))).body;
+    expect((await t.call('PATCH', `/api/documents/${doc.id}`, { base: 1, content: 'rewritten' })).body.error).toBe('report.pdf is a PDF: PDFs are read-only.');
+    expect((await t.call('POST', `/api/documents/${doc.id}/restore`, { version: 1, base: 1 })).status).toBe(400);
+    expect(t.ctx.store.getMessage(doc.id)!.content_md).toBe(doc.content);
+
+    const id = await thread(doc.id, 2);
+    const reply = `FAKE_REPLY=Done.\\n\\n<document_edit name="report.pdf">\\n<replace>\\nPage 1 opens here.\\n</replace>\\n<with>\\nChanged.\\n</with>\\n</document_edit>`;
+    const r = await t.post(id, `@r ${reply}`, [{ kind: 'agent', id: 'r', start: 0, end: 2 }]);
+    const m = await t.settled(r.agentMessageIds[0]);
+    expect(JSON.parse(m.meta!).documentEdits).toEqual([{ name: 'report.pdf', documentId: null, status: 'failed', error: 'report.pdf is a PDF: PDFs are read-only.' }]);
+    expect(t.ctx.store.getMessage(doc.id)!.content_md).toBe(doc.content);
+  });
+
+  it('teaches editing only where there is an editable document', async () => {
+    const { t, ch, sharePdf, thread, ask } = await setup();
+    const doc = (await sharePdf(reportPdf(2))).body;
+    await ask(await thread(doc.id, 1), 'what is this?');
+    expect(t.calls()[0].stdin).not.toContain('<document_editing>');
+    await ask(ch.rootThreadId, 'and overall?');
+    expect(t.calls()[1].stdin).not.toContain('<document_editing>');
+    // With a Markdown document beside it, editing is taught again (for the Markdown one).
+    await t.call('POST', `/api/threads/${ch.rootThreadId}/documents`, { name: 'notes.md', content: '# Notes\n\nText.' });
+    await ask(ch.rootThreadId, 'and now?');
+    expect(t.calls()[2].stdin).toContain('<document_editing>');
+  });
+});

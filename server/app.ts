@@ -10,7 +10,8 @@ import type { LoadedConfig } from './config/types.ts';
 import { watchConfig } from './config/watch.ts';
 import { defaultAgent, HttpError, moveThread, postDocument, postPdf, postUserMessage, threadCwd } from './core/dispatch.ts';
 import { openPassage, resetThread } from './core/passages.ts';
-import { serializeConversation, serializeMessage, serializeRun } from './core/serialize.ts';
+import { EditConflict, editDocument, listVersions, versionText, type EditOp } from './core/documents.ts';
+import { publishChildSummary, serializeChildThread, serializeConversation, serializeMessage, serializeRun } from './core/serialize.ts';
 import { openDb } from './db/migrate.ts';
 import { Store } from './db/queries.ts';
 import { Hub } from './hub.ts';
@@ -18,8 +19,8 @@ import { appRoot, resolvePaths, type Paths } from './paths.ts';
 import { TurnRunner } from './runner/turn.ts';
 import { compileGate, writeGate } from './gate/compile.ts';
 import { classifyInventory, readToolList } from './gate/inventory.ts';
-import { blocksOf } from './context/blocks.ts';
-import { documentMeta } from './context/documents.ts';
+import { blocksCached } from './context/blocks.ts';
+import { docVersion, documentMeta } from './context/documents.ts';
 import { isPdfMeta, MAX_PDF_BYTES, pdfjsDir, pdfjsVersion, STORED_FILE_RE } from './context/pdf.ts';
 import { pdfBlocks } from '../shared/pdf.ts';
 import { DirIndex } from './dirs/index.ts';
@@ -173,20 +174,12 @@ export function createApp(opts: AppOptions = {}) {
   app.onError((err, c) => {
     const status = err instanceof HttpError ? err.status : ((err as any).status ?? 500);
     if (status >= 500) console.error(err);
+    if (err instanceof EditConflict) return c.json({ error: err.message, current: err.current }, 409);
     return c.json({ error: err.message }, status);
   });
 
-  /** Keeps the parent's thread badge (reply count, last activity) live, also after the thread became a channel. */
-  function publishChildSummary(threadId: string) {
-    const t = store.getThread(threadId);
-    const parentId = t?.parent_thread_id ?? t?.origin_thread_id;
-    if (!parentId) return;
-    const sum = store.childThreadSummaries(parentId).find((x) => x.id === t!.id);
-    if (!sum) return;
-    hub.thread(parentId, 'thread.created', serializeChildThread(sum));
-  }
   hub.tap = (topic, event) => {
-    if (topic.startsWith('thread:') && (event === 'message.created' || event === 'message.done')) publishChildSummary(topic.slice(7));
+    if (topic.startsWith('thread:') && (event === 'message.created' || event === 'message.done')) publishChildSummary(ctx, topic.slice(7));
   };
 
   // ---- auth ----
@@ -254,6 +247,8 @@ export function createApp(opts: AppOptions = {}) {
         blockIndex: thread.block_index,
         blockEnd: thread.block_end,
         blockText: thread.block_text,
+        anchor: thread.anchor,
+        anchorVersion: thread.anchor_version,
         cwd: threadCwd(ctx, thread),
         moved: !!thread.dir,
       },
@@ -335,6 +330,41 @@ export function createApp(opts: AppOptions = {}) {
     const doc = postDocument(ctx, c.req.param('id'), body);
     blocksCached(doc.id, doc.content).catch(() => {}); // the first thread on it needs its blocks
     return c.json(doc, 201);
+  });
+
+  // ---- document versions ----
+  const documentOf = (id: string) => {
+    const m = store.getMessage(id);
+    if (!m || !documentMeta(m)) throw new HttpError(404, 'document not found');
+    return m;
+  };
+  app.get('/api/documents/:id/versions', (c) => {
+    const doc = documentOf(c.req.param('id'));
+    return c.json({ current: docVersion(documentMeta(doc)), versions: listVersions(ctx, doc) });
+  });
+  app.get('/api/documents/:id/versions/:v', (c) => {
+    const doc = documentOf(c.req.param('id'));
+    const version = Number(c.req.param('v'));
+    const content = Number.isInteger(version) ? versionText(ctx, doc, version) : null;
+    if (content === null) return c.json({ error: 'no such version' }, 404);
+    return c.json({ version, content });
+  });
+  // The user's edit: { base, content } for the whole text, or { base, ops: [{ find, replace, at }] } for a section.
+  app.patch('/api/documents/:id', async (c) => {
+    const body = await c.req.json();
+    const base = body.base === undefined ? undefined : Number(body.base);
+    const r = await editDocument(ctx, documentOf(c.req.param('id')).id, {
+      base,
+      content: typeof body.content === 'string' ? body.content : undefined,
+      ops: Array.isArray(body.ops) ? (body.ops as EditOp[]) : undefined,
+      by: { kind: 'user', id: null },
+    });
+    return c.json({ message: serializeMessage(r.document), version: r.version, rebased: r.rebased, unchanged: r.unchanged });
+  });
+  app.post('/api/documents/:id/restore', async (c) => {
+    const body = await c.req.json();
+    const r = await editDocument(ctx, documentOf(c.req.param('id')).id, { base: body.base === undefined ? undefined : Number(body.base), restore: Number(body.version), by: { kind: 'user', id: null } });
+    return c.json({ message: serializeMessage(r.document), version: r.version, unchanged: r.unchanged });
   });
 
   app.post('/api/runs/:id/retry', (c) => {
@@ -432,7 +462,7 @@ export function createApp(opts: AppOptions = {}) {
       hub.thread(thread.id, 'message.created', serializeMessage(note));
       hub.thread(thread.id, 'thread.passage', { id: thread.id });
     }
-    if (created || widened) publishChildSummary(thread.id);
+    if (created || widened) publishChildSummary(ctx, thread.id);
     return c.json({ id: thread.id, conversationId: thread.conversation_id, created, widened, absorbed }, created ? 201 : 200);
   });
 
@@ -442,7 +472,7 @@ export function createApp(opts: AppOptions = {}) {
     if (!thread) return c.json({ error: 'not found' }, 404);
     resetThread(ctx, thread, false);
     hub.thread(thread.id, 'thread.reset', { id: thread.id });
-    publishChildSummary(thread.id);
+    publishChildSummary(ctx, thread.id);
     return c.json({ ok: true });
   });
 
@@ -535,38 +565,6 @@ function immutable(c: any, name: string, data: Buffer, type: string, extra: Reco
 function serializeSource(m: MessageRow) {
   const out = serializeMessage(m);
   return documentMeta(m) ? { ...out, content: '' } : out;
-}
-
-/**
- * Finished messages never change, so their blocks are split once. A long document takes a while to
- * split (every block is parsed twice) and every thread opened on it needs the split.
- */
-const blockCache = new Map<string, Promise<string[]>>();
-function blocksCached(id: string, content: string): Promise<string[]> {
-  const key = `${id}:${content.length}`;
-  let hit = blockCache.get(key);
-  if (hit) {
-    blockCache.delete(key);
-    blockCache.set(key, hit);
-    return hit;
-  }
-  hit = blocksOf(content);
-  hit.catch(() => blockCache.delete(key));
-  blockCache.set(key, hit);
-  if (blockCache.size > 32) blockCache.delete(blockCache.keys().next().value!);
-  return hit;
-}
-
-function serializeChildThread(t: ReturnType<Store['childThreadSummaries']>[number]) {
-  return {
-    id: t.id,
-    parentMessageId: t.parent_message_id,
-    blockIndex: t.block_index,
-    blockEnd: t.block_end,
-    replyCount: t.reply_count,
-    lastActivity: t.last_activity ?? t.created_at,
-    channel: t.channel_id ? { id: t.channel_id, name: t.channel_name! } : null,
-  };
 }
 
 const MIME: Record<string, string> = {

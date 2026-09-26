@@ -1,5 +1,6 @@
 import type { MessageRow } from '../db/queries.ts';
-import { documentMeta, renderDocument } from './documents.ts';
+import { DOCUMENT_EDIT_HELP, documentMeta, renderDocument } from './documents.ts';
+import { isPdfMeta } from './pdf.ts';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -21,8 +22,19 @@ export function authorLabel(m: Pick<MessageRow, 'author_kind' | 'author_id'>, se
 export function formatLine(m: MessageRow, selfAgent?: string, now?: number): string {
   const head = `[${authorLabel(m, selfAgent)} ${stamp(m.created_at, now)}]`;
   const doc = documentMeta(m);
-  if (doc) return `${head} shared the document "${doc.name}":\n${renderDocument(doc, m.content_md)}`;
-  return `${head} ${m.content_md.trim()}`;
+  if (doc) return `${head} shared the document "${doc.name}":\n${renderDocument(doc, m.content_md)}${isPdfMeta(doc) ? '' : `\n${DOCUMENT_EDIT_HELP}`}`;
+  return `${head} ${[m.content_md.trim(), ...editNotes(m)].filter(Boolean).join(' ')}`;
+}
+
+/** An agent's document edits, which its reply shows as results rather than text. */
+function editNotes(m: MessageRow): string[] {
+  if (m.author_kind !== 'agent' || !m.meta) return [];
+  try {
+    const edits = JSON.parse(m.meta).documentEdits as { name: string; status: string; version?: number }[] | undefined;
+    return (edits ?? []).map((e) => (e.status === 'applied' ? `[edited the document "${e.name}": now version ${e.version}]` : `[an edit of "${e.name}" was not applied]`));
+  } catch {
+    return [];
+  }
 }
 
 /** Messages the agent should see: other authors' final text; never system rows or its own replies. */
@@ -30,7 +42,7 @@ export function visibleTo(m: MessageRow, agentId: string): boolean {
   if (m.status !== 'done' || m.done_seq === null) return false;
   if (m.author_kind === 'system') return false;
   if (m.author_kind === 'agent' && m.author_id === agentId) return false;
-  return m.content_md.trim().length > 0;
+  return m.content_md.trim().length > 0 || editNotes(m).length > 0;
 }
 
 /**

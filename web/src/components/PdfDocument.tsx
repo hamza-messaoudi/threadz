@@ -379,6 +379,12 @@ export const PdfDocumentMessage = memo(function PdfDocumentMessage(props: Messag
         onFold={toggleFold}
         onPast={(where) => scrollPastDoc(root.current, where)}
         onOpenThread={openThread}
+        docId={m.id}
+        // A PDF is read-only: no pencil, one version, nothing to preview.
+        editing={false}
+        preview={null}
+        editLabel=""
+        onVersion={() => {}}
         blockAt={blockAt}
         whereAt={whereAt}
         tools={tools}

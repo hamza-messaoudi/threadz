@@ -56,8 +56,9 @@ export function SwapText({ text, className }: { text: string; className?: string
   const ref = useRef<HTMLSpanElement>(null);
   const [shown, setShown] = useState(text);
   useEffect(() => {
-    if (text === shown) return;
     const el = ref.current!;
+    // Back to the text on screen before the swap finished (e.g. "Saving" for a moment): just stay.
+    if (text === shown) return void el.classList.remove('is-exit');
     el.classList.add('is-exit');
     const t = setTimeout(() => {
       setShown(text);

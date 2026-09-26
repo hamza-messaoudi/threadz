@@ -5,12 +5,14 @@ import { MarkdownBlocks, MessageMarkdown, useParsed } from '../markdown/MessageM
 import type { Block } from '../markdown/blocks.ts';
 import { agentColor, useAppData } from '../lib/store.tsx';
 import { tildify } from '../lib/dirs.ts';
-import { navigate } from '../lib/router.ts';
+import { navigate, parseRoute } from '../lib/router.ts';
 import { MatrixLoader, ThinkingLine } from './motion.tsx';
 import { Accordion, AccChevron, PopNumber, SuccessCheck, SwapText } from './transitions.tsx';
 import { orderSteps, prettyTool, StepRow, StepsSummary, toolSummary, useAnchors, type Step } from './Steps.tsx';
 import { ICONS } from './icons.tsx';
 import { WorkflowCard } from './WorkflowCard.tsx';
+import { editorName, revealEdit, withoutEdits } from '../lib/document.ts';
+import { PencilSimple, Warning } from '@phosphor-icons/react';
 
 export interface MessageProps {
   m: Msg;
@@ -49,8 +51,10 @@ function AgentMessage(props: MessageProps) {
   const name = m.authorId ?? 'agent';
   const color = agentColor(m.authorId);
   const live = m.status === 'streaming' || m.status === 'queued';
+  // A document edit being written is not text to read: the server applies it and the reply shows the result.
+  const edit = useMemo(() => (live ? withoutEdits(m.content) : { text: m.content, drafting: null }), [live, m.content]);
   // The text as revealed so far: it runs a little behind the stream, at a steady pace.
-  const smooth = useSmoothText(m.content, m.status === 'streaming');
+  const smooth = useSmoothText(edit.text, m.status === 'streaming');
   // The status line stays until the text has caught up, then folds away and unmounts.
   const working = live || !smooth.done;
   const [statusMounted, setStatusMounted] = useState(working);
@@ -93,9 +97,10 @@ function AgentMessage(props: MessageProps) {
       {/* Folds away rather than vanishing, so the text above does not jump when the turn ends. */}
       {statusMounted && (
         <Accordion open={working}>
-          <AgentStatus m={m} />
+          <AgentStatus m={m} drafting={edit.drafting} />
         </Accordion>
       )}
+      {m.meta?.documentEdits && <EditResults m={m} />}
       {m.status === 'error' && <ErrorCard m={m} />}
     </div>
   );
@@ -194,7 +199,7 @@ function AgentBody(props: MessageProps & { smooth: { text: string; done: boolean
 }
 
 /** While a turn is queued or running: a matrix loader and a status line that follows the tool calls. */
-function AgentStatus({ m }: { m: Msg }) {
+function AgentStatus({ m, drafting }: { m: Msg; drafting: string | null }) {
   // Whichever grew last, the text or the tool list, says what the agent is doing now.
   const seen = useRef({ tools: m.toolEvents.length, text: m.content.length, last: 'none' as 'none' | 'tool' | 'text' });
   if (m.toolEvents.length !== seen.current.tools) seen.current = { ...seen.current, tools: m.toolEvents.length, last: 'tool' };
@@ -207,6 +212,8 @@ function AgentStatus({ m }: { m: Msg }) {
       ? 'Waiting for a free slot…'
       : reading
         ? 'Reading the document…'
+        : drafting
+        ? `Editing ${drafting}…`
         : running
         ? toolActivity(running)
         : seen.current.last === 'text' || (seen.current.last === 'none' && m.content)
@@ -267,7 +274,7 @@ function Body(props: MessageProps) {
  * Wraps each block with its thread controls: the reply gutter, the rail, the reply badge. The function
  * keeps its identity until one of those changes, so memoised block lists (a document) skip re-renders.
  */
-export function useBlockRenderer({ m, childThreads, activeRange, pendingRange, onOpenThread, onExtendPassage, allowThreads }: MessageProps) {
+export function useBlockRenderer({ m, childThreads, activeRange, pendingRange, onOpenThread, onExtendPassage, allowThreads }: MessageProps, extra?: (b: Block) => ReactNode) {
   const threads = useMemo(() => (childThreads ?? []).filter((t) => t.parentMessageId === m.id), [childThreads, m.id]);
   const canThread = allowThreads && m.status === 'done' && !!onOpenThread;
   return useCallback((b: Block, content: ReactNode) => {
@@ -307,6 +314,7 @@ export function useBlockRenderer({ m, childThreads, activeRange, pendingRange, o
           </button>
         )}
         {content}
+        {extra?.(b)}
         {ending.map((t) => (
           <button
             key={t.id}
@@ -327,12 +335,17 @@ export function useBlockRenderer({ m, childThreads, activeRange, pendingRange, o
               </span>
             )}
             {t.blockEnd > t.blockIndex && <span className="thread-badge-meta">{t.blockEnd - t.blockIndex + 1} paragraphs</span>}
+            {t.anchor === 'changed' && (
+              <span className="thread-badge-meta thread-badge-changed" data-tooltip={`Version ${t.anchorVersion} changed this passage after the thread began`}>
+                passage edited
+              </span>
+            )}
             <span className="thread-badge-meta">{relTime(t.lastActivity)}</span>
           </button>
         ))}
       </div>
     );
-  }, [m, threads, canThread, activeRange, pendingRange, onOpenThread, onExtendPassage]);
+  }, [m, threads, canThread, activeRange, pendingRange, onOpenThread, onExtendPassage, extra]);
 }
 
 export function relTime(ts: number): string {
@@ -442,6 +455,7 @@ function SystemMessage({ m, run }: MessageProps) {
   if (kind === 'moved') return <MovedNote to={m.meta.to} />;
   if (kind === 'promoted') return <PromotedNote m={m} />;
   if (kind === 'merged') return <MergedNote m={m} />;
+  if (kind === 'document_edit') return <DocEditNote m={m} />;
   if (kind === 'workflow_step')
     return (
       <StepPrompt m={m} />
@@ -454,6 +468,81 @@ function MovedNote({ to }: { to: string }) {
   return (
     <div className="system-msg moved">
       → Moved to <code>{tildify(to, config?.homeDir)}</code>. Replies run there from now on.
+    </div>
+  );
+}
+
+/** What an agent's reply did to a shared document: the new version, or why its edit was not applied. */
+function EditResults({ m }: { m: Msg }) {
+  const results = m.meta.documentEdits as { name: string; documentId: string | null; status: 'applied' | 'unchanged' | 'failed'; version?: number; rebased?: boolean; error?: string }[];
+  return (
+    <div className="edit-results">
+      {results.map((r, i) =>
+        r.status === 'failed' ? (
+          <div key={i} className="edit-result failed">
+            <Warning size={15} aria-hidden />
+            <span>
+              Could not edit <strong>{r.name}</strong>: {r.error}
+            </span>
+          </div>
+        ) : (
+          <div key={i} className="edit-result">
+            <PencilSimple size={15} aria-hidden />
+            <span>
+              {r.status === 'unchanged' ? (
+                <>
+                  Left <strong>{r.name}</strong> as it was
+                </>
+              ) : (
+                <>
+                  Edited <strong>{r.name}</strong> · version {r.version}
+                  {r.rebased && <span className="muted"> · on top of an edit made meanwhile</span>}
+                </>
+              )}
+            </span>
+            {r.status === 'applied' && r.documentId && (
+              <button className="link" onClick={() => revealEdit(r.documentId!, r.version)}>
+                Show
+              </button>
+            )}
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
+/** In the timeline where a document was edited: by whom, which version, from where, and what it did to threads. */
+function DocEditNote({ m }: { m: Msg }) {
+  const meta = m.meta as { documentId: string; name: string; version: number; by: { kind: 'user' | 'agent'; id: string | null }; threadId: string | null; restored: number | null; threads?: { changed: number; removed: number } };
+  const moved = meta.threads ?? { changed: 0, removed: 0 };
+  const effects = [
+    moved.changed ? `${moved.changed} ${moved.changed === 1 ? 'thread’s passage' : 'threads’ passages'} changed` : '',
+    moved.removed ? `${moved.removed} ${moved.removed === 1 ? 'thread' : 'threads'} detached` : '',
+  ].filter(Boolean);
+  return (
+    <div className="system-msg doc-edit-note">
+      <PencilSimple size={14} aria-hidden />
+      <span>
+        <span className="doc-edit-who" style={meta.by.kind === 'agent' ? { color: agentColor(meta.by.id) } : undefined}>
+          {editorName(meta.by)}
+        </span>{' '}
+        {meta.restored ? `restored version ${meta.restored} of` : 'edited'} <strong>{meta.name}</strong>
+        <span className="muted"> · version {meta.version}</span>
+        {meta.threadId && (
+          <>
+            {' · '}
+            <button className="link" onClick={() => navigate({ view: 'conversation', conversationId: parseRoute().conversationId, threadId: meta.threadId! })}>
+              from a thread
+            </button>
+          </>
+        )}
+        {effects.length > 0 && <span className="muted"> · {effects.join(', ')}</span>}
+        {' · '}
+        <button className="link" onClick={() => revealEdit(meta.documentId, meta.version)}>
+          Show
+        </button>
+      </span>
     </div>
   );
 }

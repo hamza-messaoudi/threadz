@@ -1,7 +1,29 @@
-import { ArrowLineDown, ArrowLineUp, ArrowsInLineVertical, ArrowsOutLineVertical, FileMd, FilePdf, ListDashes } from '@phosphor-icons/react';
+import { ArrowLineDown, ArrowLineUp, ArrowsInLineVertical, ArrowsOutLineVertical, ClockCounterClockwise, FileMd, FilePdf, ListDashes, PencilSimple } from '@phosphor-icons/react';
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
 import type { ChildThread } from '../lib/api.ts';
-import { chunkBlocks, chunkOf, docMeta, excerpt, nodeText, outline, readingTime, sectionAt, trailAt, type Chunk, type DocMeta, type Heading } from '../lib/document.ts';
+import {
+  chunkBlocks,
+  chunkOf,
+  docMeta,
+  documentApi,
+  docVersion,
+  editorName,
+  excerpt,
+  REVEAL_EDIT,
+  nodeText,
+  outline,
+  readingTime,
+  sectionAt,
+  sectionOf,
+  sourceOf,
+  trailAt,
+  type Chunk,
+  type DocMeta,
+  type DocVersion,
+  type Heading,
+} from '../lib/document.ts';
+import { navigate, parseRoute } from '../lib/router.ts';
+import { agentColor } from '../lib/store.tsx';
 import { isPdfDoc } from '../lib/pdf.ts';
 import { useDropdown } from '../lib/useDropdown.ts';
 import { durationVar } from '../lib/usePresence.ts';
@@ -9,12 +31,26 @@ import type { Block } from '../markdown/blocks.ts';
 import { MarkdownBlocks, useParsed } from '../markdown/MessageMarkdown.tsx';
 import type { Parsed } from '../markdown/parse.ts';
 import { useContents } from './DocContents.tsx';
+import { DocEditor, type Editing } from './DocEditor.tsx';
 import { ICONS } from './icons.tsx';
 import { relTime, useBlockRenderer, type MessageProps } from './Message.tsx';
 import { PopNumber, SwapText } from './transitions.tsx';
 
 /** A scroll the reader asked for (a jump, not a layout shift): ScrollArea stops following the bottom. */
 export const SCROLL_INTENT = 'scrollintent';
+
+
+/** Past this size the pencil opens the section being read, not the whole text: a 100-page textarea is no way to fix a typo. */
+const WHOLE_EDIT_MAX = 40_000;
+
+const NO_THREADS: ChildThread[] = [];
+
+/** An older version on screen instead of the current one. */
+interface Preview {
+  version: number;
+  content: string;
+  info: DocVersion;
+}
 
 const time = (ts: number) => new Date(ts).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -47,7 +83,9 @@ interface Jump {
 export const DocumentMessage = memo(function DocumentMessage(props: MessageProps) {
   const { m, childThreads, activeRange, onOpenThread } = props;
   const meta = docMeta(m)!;
-  const parsed = useParsed(m.id, m.content, false);
+  const version = docVersion(meta);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const parsed = useParsed(preview ? `${m.id}@${preview.version}` : m.id, preview ? preview.content : m.content, false);
   const doc = useMemo<Doc | null>(() => {
     if (!parsed) return null;
     const offsets: number[] = [];
@@ -62,7 +100,73 @@ export const DocumentMessage = memo(function DocumentMessage(props: MessageProps
     () => (childThreads ?? []).filter((t) => t.parentMessageId === m.id).sort((a, b) => a.blockIndex - b.blockIndex || a.blockEnd - b.blockEnd),
     [childThreads, m.id],
   );
-  const renderBlock = useBlockRenderer(props);
+
+  // ---- editing: the whole text, or a section, in place ----
+  const [editing, setEditing] = useState<Editing | null>(null);
+  const canEdit = !preview && !!parsed && !!doc;
+  const startEdit = useCallback(
+    (at: number | 'whole') => {
+      if (!parsed || !doc) return;
+      const whole = at === 'whole' || !parsed.lines || !doc.headings.length;
+      let [from, to] = whole ? [0, parsed.blocks.length - 1] : sectionOf(doc.headings, parsed.blocks.length, at);
+      // Nothing before the first heading: its section instead.
+      if (to < from) [from, to] = sectionOf(doc.headings, parsed.blocks.length, doc.headings[0].index);
+      const { text, at: offset } = whole ? { text: m.content, at: 0 } : sourceOf(m.content, parsed.lines!, from, to);
+      const heading = doc.headings.find((h) => h.index === from);
+      const label = whole ? meta.name : heading ? `“${heading.text}”` : `the opening of ${meta.name}`;
+      setEditing({ from, to, whole, base: version, original: text, at: offset, draft: text, label });
+    },
+    [parsed, doc, m.content, version, meta.name],
+  );
+  // The section being edited, found again in a newer version by its first line (its heading).
+  const relocate = useCallback(() => {
+    if (!editing || editing.whole || !parsed?.lines || !doc) return null;
+    const first = editing.original.split('\n')[0];
+    const starts = firstLines(m.content, parsed.lines).flatMap((l, i) => (l === first ? [i] : []));
+    if (starts.length !== 1) return null;
+    const [from, to] = sectionOf(doc.headings, parsed.blocks.length, starts[0]);
+    return to < from ? null : sourceOf(m.content, parsed.lines, from, to);
+  }, [editing, parsed, doc, m.content]);
+  const editor = editing && (
+    <DocEditor
+      key="editor"
+      docId={m.id}
+      name={meta.name}
+      editing={editing}
+      version={version}
+      onDraft={(draft) => setEditing((e) => e && { ...e, draft })}
+      onClose={() => setEditing(null)}
+      onSaved={() => setEditing(null)}
+      relocate={relocate}
+    />
+  );
+  const headingPencil = useCallback(
+    (b: Block) =>
+      canEdit && parsed?.lines && /^h[1-3]$/.test(b.node[0]) ? (
+        <button
+          className="block-edit"
+          onClick={(e) => {
+            e.stopPropagation();
+            startEdit(b.index);
+          }}
+          data-tooltip="Edit this section"
+          aria-label={`Edit the section ${nodeText(b.node).trim()}`}
+        >
+          <PencilSimple size={14} />
+        </button>
+      ) : null,
+    [canEdit, parsed, startEdit],
+  );
+  // An older version is only read: no threads on it, no pencils.
+  const threadProps = preview ? { ...props, childThreads: NO_THREADS, allowThreads: false, activeRange: null, pendingRange: null, onOpenThread: undefined } : props;
+  const baseRender = useBlockRenderer(threadProps, editing ? undefined : headingPencil);
+  const renderBlock = useCallback(
+    (b: Block, content: ReactNode) => {
+      if (editing && !editing.whole && b.index >= editing.from && b.index <= editing.to) return b.index === editing.from ? editor : null;
+      return baseRender(b, content);
+    },
+    [baseRender, editing, editor],
+  );
   const root = useRef<HTMLDivElement>(null);
   const head = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
@@ -79,8 +183,16 @@ export const DocumentMessage = memo(function DocumentMessage(props: MessageProps
   const measured = useRef({ px: 0, chars: 0 });
   const jumpChunk = jump && doc ? chunkOf(doc.chunks, jump.index) : -9;
   // Before the first intersection report: the top and the end, where a reader lands.
-  const rendered = (k: number) => Math.abs(k - jumpChunk) <= 1 || (inView ? inView.has(k) : k < 2 || k >= n - 2);
+  const editChunks = editing && !editing.whole && doc ? [chunkOf(doc.chunks, editing.from), chunkOf(doc.chunks, editing.to)] : null;
+  const rendered = (k: number) =>
+    Math.abs(k - jumpChunk) <= 1 || (!!editChunks && k >= editChunks[0] && k <= editChunks[1]) || (inView ? inView.has(k) : k < 2 || k >= n - 2);
   const heightOf = (k: number) => heights.current.get(k) ?? Math.round(doc!.chunks[k].chars * (measured.current.chars ? measured.current.px / measured.current.chars : 0.38));
+
+  // Another version (an edit, a preview) has other chunks: measure them afresh.
+  useLayoutEffect(() => {
+    heights.current = new Map();
+    measured.current = { px: 0, chars: 0 };
+  }, [doc]);
 
   useEffect(() => {
     const el = body.current;
@@ -120,7 +232,7 @@ export const DocumentMessage = memo(function DocumentMessage(props: MessageProps
       io.disconnect();
       ro.disconnect();
     };
-  }, [doc, folded]);
+  }, [doc, folded, !!editing?.whole]);
 
   // ---- jumps: render the target's chunk, then scroll it into place ----
   const jumpTo = useCallback((index: number, how: Jump['how'] = 'center', smooth = true) => setJump({ index, how, smooth, seq: performance.now() }), []);
@@ -202,12 +314,101 @@ export const DocumentMessage = memo(function DocumentMessage(props: MessageProps
 
   const scrollPast = (where: 'before' | 'after') => scrollPastDoc(root.current, where);
 
+  // ---- what an edit changed: marked briefly when a new version arrives, or when asked to show it ----
+  const flashDue = useRef(false);
+  const seenVersion = useRef(version);
+  if (seenVersion.current !== version) {
+    seenVersion.current = version;
+    flashDue.current = true;
+  }
+  const flashChanged = useCallback(() => {
+    const el = body.current;
+    if (!el) return;
+    for (const [a, z] of meta.changed ?? [])
+      for (let i = a; i <= z; i++) {
+        const b = el.querySelector<HTMLElement>(`[data-block="${i}"]`);
+        if (!b) continue;
+        b.classList.remove('doc-changed');
+        void b.offsetWidth;
+        b.classList.add('doc-changed');
+      }
+  }, [meta.changed]);
+  useEffect(() => {
+    if (!flashDue.current || preview || !doc) return;
+    flashDue.current = false;
+    const raf = requestAnimationFrame(flashChanged);
+    return () => cancelAnimationFrame(raf);
+  }, [doc]);
+  useEffect(() => {
+    const on = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.id !== m.id) return;
+      if (folded) setFolded(false);
+      if (detail.version && detail.version !== version) {
+        root.current?.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
+        documentApi.versions(m.id).then((r) => {
+          const v = r.versions.find((x) => x.version === detail.version);
+          if (v) showVersion(v);
+        });
+        return;
+      }
+      setPreview(null);
+      const first = meta.changed?.[0]?.[0];
+      if (first !== undefined) jumpTo(first, 'center');
+      else root.current?.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' });
+      flashDue.current = true;
+      setTimeout(flashChanged, 60);
+    };
+    window.addEventListener(REVEAL_EDIT, on);
+    return () => window.removeEventListener(REVEAL_EDIT, on);
+  }, [m.id, meta.changed, folded, flashChanged, version]);
+
+  // Someone else saved while a section is open: keep the editor on its section (found by its heading).
+  useEffect(() => {
+    if (!editing || editing.whole || !parsed?.lines || !doc || editing.base === version) return;
+    const first = editing.original.split('\n')[0];
+    const heads = firstLines(m.content, parsed.lines);
+    const hit = heads.findIndex((l) => l === first);
+    const last = parsed.blocks.length - 1;
+    const [from, to] = hit >= 0 ? sectionOf(doc.headings, parsed.blocks.length, hit) : [Math.min(editing.from, last), Math.min(editing.to, last)];
+    if (from !== editing.from || to !== editing.to) setEditing((e) => e && { ...e, from, to });
+  }, [doc]);
+
+  // An editor that opens off screen, or low on it, comes up under the header.
+  const editKey = editing ? `${editing.whole}:${editing.from}` : '';
+  useLayoutEffect(() => {
+    const scroller = scrollerOf(root.current);
+    const el = root.current?.querySelector('.doc-editor');
+    if (!editKey || !scroller || !el) return;
+    // The reader's own move: the view must not follow the bottom as the editor grows.
+    scroller.dispatchEvent(new Event(SCROLL_INTENT));
+    const headH = head.current?.offsetHeight ?? 0;
+    const r = el.getBoundingClientRect();
+    const s = scroller.getBoundingClientRect();
+    if (r.top >= s.top + headH && r.top <= s.top + s.height * 0.45) return;
+    scroller.scrollTo({ top: scroller.scrollTop + r.top - s.top - headH - 12, behavior: reducedMotion() ? 'auto' : 'smooth' });
+  }, [editKey]);
+
+  const onEdit = (at: number) => {
+    if (!doc) return;
+    if (folded) setFolded(false);
+    if (m.content.length <= WHOLE_EDIT_MAX || !doc.headings.length) return startEdit('whole');
+    startEdit(at >= 0 ? at : -1);
+  };
+  const showVersion = async (v: DocVersion) => {
+    if (v.version === version) return setPreview(null);
+    const { content } = await documentApi.version(m.id, v.version);
+    setEditing(null);
+    setPreview({ version: v.version, content, info: v });
+  };
+
   return (
-    <div ref={root} className={`msg doc ${props.flash ? 'flash' : ''}`} id={`m-${m.id}`} data-message-id={m.id}>
+    <div ref={root} className={`msg doc ${props.flash ? 'flash' : ''} ${editing ? 'is-editing' : ''}`} id={`m-${m.id}`} data-message-id={m.id}>
       <DocHeader
         headRef={head}
         rootRef={root}
         bodyRef={body}
+        docId={m.id}
         meta={meta}
         sharedAt={m.createdAt}
         parsed={parsed}
@@ -215,24 +416,35 @@ export const DocumentMessage = memo(function DocumentMessage(props: MessageProps
         threads={threads}
         folded={folded}
         contentsOpen={contentsOpen}
+        editing={!!editing}
+        preview={preview?.version ?? null}
         onContents={() => contents?.toggle(m.id)}
         onAt={contentsOpen ? contents!.setAt : undefined}
         onFold={toggleFold}
         onPast={scrollPast}
-        onOpenThread={(t) => onOpenThread?.(m, t.blockIndex, t.blockEnd)}
+        onOpenThread={(t) => (t.blockIndex < 0 ? navigate({ ...parseRoute(), threadId: t.id }) : onOpenThread?.(m, t.blockIndex, t.blockEnd))}
+        onEdit={canEdit ? onEdit : undefined}
+        editLabel={m.content.length > WHOLE_EDIT_MAX && doc?.headings.length ? 'Edit this section' : 'Edit the document'}
+        onVersion={showVersion}
       />
       {!folded && (
         <div ref={fold} className="doc-fold">
-          <div ref={body} className="doc-body">
-            {parsed &&
-              doc?.chunks.map((c, k) => (
-                <DocChunk key={k} k={k} chunk={c} parsed={parsed} rendered={rendered(k)} height={rendered(k) ? 0 : heightOf(k)} renderBlock={renderBlock} />
-              ))}
-          </div>
+          {preview && <PreviewBar docId={m.id} preview={preview} current={version} onClose={() => setPreview(null)} />}
+          {editing?.whole ? (
+            editor
+          ) : (
+            <div ref={body} className={`doc-body ${preview ? 'is-preview' : ''}`}>
+              {parsed &&
+                doc?.chunks.map((c, k) => (
+                  <DocChunk key={k} k={k} chunk={c} parsed={parsed} rendered={rendered(k)} height={rendered(k) ? 0 : heightOf(k)} renderBlock={renderBlock} />
+                ))}
+            </div>
+          )}
           <div className="doc-end">
             <span className="promoted-rule" />
             <span>
-              End of {meta.name} ·{' '}
+              End of {meta.name}
+              {preview ? ` version ${preview.version}` : ''} ·{' '}
               <button className="link" onClick={() => doc && jumpTo(0, 'start')}>
                 back to the top
               </button>
@@ -261,6 +473,52 @@ export function scrollPastDoc(el: HTMLElement | null, where: 'before' | 'after')
     arrive(scroller.querySelector('.message-list') ?? scroller);
     scroller.scrollTop = top;
   } else scroller.scrollTo({ top, behavior: reducedMotion() ? 'auto' : 'smooth' });
+}
+
+/** The first source line of each block (a section is found again by its heading line). */
+function firstLines(content: string, lines: [number, number][]): string[] {
+  const src = content.split('\n');
+  return lines.map(([a]) => src[a] ?? '');
+}
+
+/** Over an older version: whose it was, and the way back to the current one or to restore it. */
+function PreviewBar({ docId, preview, current, onClose }: { docId: string; preview: Preview; current: number; onClose: () => void }) {
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const by = preview.info.by;
+  return (
+    <div className="doc-preview-bar" role="status">
+      <ClockCounterClockwise size={15} aria-hidden />
+      <span className="doc-preview-text">
+        Version {preview.version} of {current} ·{' '}
+        <span style={by.kind === 'agent' ? { color: agentColor(by.id) } : undefined}>{editorName(by)}</span>
+        {preview.info.restored ? ` restored version ${preview.info.restored}` : ''} · {relTime(preview.info.createdAt)}
+        {error && <span className="doc-preview-error"> · {error}</span>}
+      </span>
+      <span className="doc-preview-actions">
+        <button
+          className="btn small"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            try {
+              await documentApi.restore(docId, preview.version, current);
+              onClose();
+            } catch (e) {
+              setError(e instanceof Error ? e.message : String(e));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          Restore this version
+        </button>
+        <button className="btn small primary" onClick={onClose}>
+          Back to the current one
+        </button>
+      </span>
+    </div>
+  );
 }
 
 /** Folded documents stay folded for this viewer. */
@@ -349,6 +607,7 @@ export interface HeaderProps {
   headRef: RefObject<HTMLDivElement | null>;
   rootRef: RefObject<HTMLDivElement | null>;
   bodyRef: RefObject<HTMLDivElement | null>;
+  docId: string;
   meta: DocMeta;
   sharedAt: number;
   parsed: Parsed | null;
@@ -362,6 +621,13 @@ export interface HeaderProps {
   onFold: () => void;
   onPast: (where: 'before' | 'after') => void;
   onOpenThread: (t: ChildThread) => void;
+  editing: boolean;
+  /** The older version on screen, if any. */
+  preview: number | null;
+  /** Opens the editor on the section at the reading line (or the whole text); absent when it cannot. */
+  onEdit?: (at: number) => void;
+  editLabel: string;
+  onVersion: (v: DocVersion) => void;
   /** The block at the reading line, for a body whose blocks are not boxes of their own (a PDF's). */
   blockAt?: (line: number) => number;
   /** Replaces the section trail while stuck (a PDF's names its page too). */
@@ -371,7 +637,7 @@ export interface HeaderProps {
 }
 
 /** Sticks to the top while the document is on screen: title, current section, progress, and its menus. */
-export function DocHeader({ headRef, rootRef, bodyRef, meta, sharedAt, parsed, doc, threads, folded, contentsOpen, onContents, onAt, onFold, onPast, onOpenThread, blockAt, whereAt, tools }: HeaderProps) {
+export function DocHeader({ headRef, rootRef, bodyRef, docId, meta, sharedAt, parsed, doc, threads, folded, contentsOpen, onContents, onAt, onFold, onPast, onOpenThread, editing, preview, onEdit, editLabel, onVersion, blockAt, whereAt, tools }: HeaderProps) {
   const [stuck, setStuck] = useState(false);
   // The jumps around the document only help when it is longer than the screen.
   const [long, setLong] = useState(false);
@@ -379,7 +645,18 @@ export function DocHeader({ headRef, rootRef, bodyRef, meta, sharedAt, parsed, d
   // The heading of the block at the reading line, and the one above it.
   const [at, setAt] = useState(-1);
   const [block, setBlock] = useState(-1);
-  const [menu, setMenu] = useState<'threads' | null>(null);
+  const [menu, setMenu] = useState<'threads' | 'history' | null>(null);
+  const [versions, setVersions] = useState<DocVersion[] | null>(null);
+  const version = docVersion(meta);
+  // The history is read when its menu opens, and again after each new version.
+  useEffect(() => {
+    if (menu !== 'history') return;
+    let live = true;
+    documentApi.versions(docId).then((r) => live && setVersions(r.versions.slice().reverse()), () => live && setVersions([]));
+    return () => {
+      live = false;
+    };
+  }, [menu, docId, version]);
   const bar = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -423,8 +700,15 @@ export function DocHeader({ headRef, rootRef, bodyRef, meta, sharedAt, parsed, d
 
   const words = meta.words.toLocaleString();
   const trail = whereAt ? (block >= 0 ? whereAt(block) : '') : doc && at >= 0 ? trailAt(doc.headings, at) : '';
+  const when = version > 1 && meta.editedAt ? `version ${version} · edited by ${editorName(meta.editedBy).replace(/^You$/, 'you')} ${relTime(meta.editedAt)}` : `shared ${time(sharedAt)}`;
   const pages = isPdfDoc(meta) ? `${meta.pages.toLocaleString()} ${meta.pages === 1 ? 'page' : 'pages'} · ` : '';
-  const sub = stuck && trail ? trail : `shared ${time(sharedAt)} · ${pages}${words} words · ${readingTime(meta.words)}${threads.length ? ` · ${threads.length} ${threads.length === 1 ? 'thread' : 'threads'}` : ''}`;
+  const sub = preview
+    ? `viewing version ${preview} of ${version}`
+    : stuck && trail
+      ? trail
+      : `${when} · ${pages}${words} words · ${readingTime(meta.words)}${threads.length ? ` · ${threads.length} ${threads.length === 1 ? 'thread' : 'threads'}` : ''}`;
+  const attached = threads.filter((t) => t.blockIndex >= 0);
+  const detached = threads.filter((t) => t.blockIndex < 0);
   useEffect(() => {
     onAt?.(at);
   }, [at, onAt]);
@@ -446,6 +730,31 @@ export function DocHeader({ headRef, rootRef, bodyRef, meta, sharedAt, parsed, d
         {!folded && doc && doc.headings.length > 1 && (
           <button className={`doc-btn ${contentsOpen ? 'on' : ''}`} onClick={onContents} data-tooltip={contentsOpen ? 'Close contents' : 'Contents'} aria-label="Contents" aria-expanded={contentsOpen}>
             <ListDashes size={16} />
+          </button>
+        )}
+        {onEdit && (
+          <button
+            className={`doc-btn ${editing ? 'on' : ''}`}
+            onClick={() => onEdit(at)}
+            disabled={editing}
+            data-tooltip={editing ? undefined : editLabel}
+            aria-label={editLabel}
+          >
+            <PencilSimple size={16} />
+          </button>
+        )}
+        {(version > 1 || preview) && (
+          <button
+            className={`doc-btn doc-history-btn ${menu === 'history' || preview ? 'on' : ''}`}
+            onClick={() => setMenu(menu === 'history' ? null : 'history')}
+            data-tooltip="Versions"
+            aria-label="Versions of this document"
+            aria-expanded={menu === 'history'}
+          >
+            <ClockCounterClockwise size={16} />
+            <span className="doc-btn-label">
+              <PopNumber value={`v${preview ?? version}`} />
+            </span>
           </button>
         )}
         {threads.length > 0 && (
@@ -477,7 +786,7 @@ export function DocHeader({ headRef, rootRef, bodyRef, meta, sharedAt, parsed, d
       {!folded && (
         <span className="doc-track" aria-hidden={!stuck}>
           <span ref={bar} className="doc-progress" />
-          {threads.map((t) => (
+          {(preview ? [] : attached).map((t) => (
             <button
               key={t.id}
               className="doc-tick"
@@ -490,12 +799,38 @@ export function DocHeader({ headRef, rootRef, bodyRef, meta, sharedAt, parsed, d
           ))}
         </span>
       )}
-      {menuView.shown && (
+      {menuView.shown === 'history' && (
+        <div className={`doc-menu ${menuView.className}`} data-origin="top-right" role="menu">
+          <div className="doc-menu-title">Versions</div>
+          {!versions && <div className="doc-menu-empty muted">Loading…</div>}
+          {versions?.map((v) => (
+            <button
+              key={v.version}
+              className={`dd-item doc-version-item ${(preview ?? version) === v.version ? 'on' : ''}`}
+              role="menuitem"
+              onClick={() => {
+                setMenu(null);
+                onVersion(v);
+              }}
+            >
+              <span className="dd-title">
+                Version {v.version}
+                {v.version === version && <span className="doc-version-tag">current</span>}
+              </span>
+              <span className="dd-sub">
+                <span style={v.by.kind === 'agent' ? { color: agentColor(v.by.id) } : undefined}>{editorName(v.by)}</span>
+                {v.version === 1 ? ' shared it' : v.restored ? ` restored version ${v.restored}` : v.threadId ? ' edited it from a thread' : ' edited it'} · {relTime(v.createdAt)}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
+      {menuView.shown === 'threads' && (
         <div className={`doc-menu ${menuView.className}`} data-origin="top-right" role="menu">
           <div className="doc-menu-title">
             {threads.length} {threads.length === 1 ? 'thread' : 'threads'} on this document
           </div>
-          {threads.map((t) => {
+          {attached.map((t) => {
             const sec = doc ? sectionAt(doc.headings, t.blockIndex) : null;
             return (
               <button
@@ -509,12 +844,30 @@ export function DocHeader({ headRef, rootRef, bodyRef, meta, sharedAt, parsed, d
               >
                 <span className="dd-title">{parsed ? excerpt(parsed.blocks, t.blockIndex) : 'Passage'}</span>
                 <span className="dd-sub">
+                  {t.anchor === 'changed' ? `passage edited in version ${t.anchorVersion} · ` : ''}
                   {sec && sec.index !== t.blockIndex ? `${sec.text} · ` : ''}
                   {t.channel ? `became #${t.channel.name}` : `${t.replyCount} ${t.replyCount === 1 ? 'reply' : 'replies'} · ${relTime(t.lastActivity)}`}
                 </span>
               </button>
             );
           })}
+          {detached.length > 0 && <div className="doc-menu-title">No longer in the document</div>}
+          {detached.map((t) => (
+            <button
+              key={t.id}
+              className="dd-item doc-thread-item is-detached"
+              role="menuitem"
+              onClick={() => {
+                setMenu(null);
+                onOpenThread(t);
+              }}
+            >
+              <span className="dd-title">{t.quote ?? 'Passage'}</span>
+              <span className="dd-sub">
+                removed or rewritten in version {t.anchorVersion} · {t.replyCount} {t.replyCount === 1 ? 'reply' : 'replies'}
+              </span>
+            </button>
+          ))}
         </div>
       )}
     </div>
