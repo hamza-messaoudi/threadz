@@ -1,5 +1,6 @@
 import type { AppContext } from '../app.ts';
-import { describeDocument, documentMeta, DOCUMENT_NAME_RE, MAX_DOCUMENT_CHARS } from '../context/documents.ts';
+import { describeDocument, documentMeta, DOCUMENT_NAME_RE, MAX_DOCUMENT_CHARS, type DocumentMeta } from '../context/documents.ts';
+import { extractPdf, MAX_PDF_BYTES, PDF_NAME_RE, storePdf, type ExtractedPdf, type PdfMeta } from '../context/pdf.ts';
 import { resolveMentions } from '../context/mentions.ts';
 import type { MessageRow, ThreadRow } from '../db/queries.ts';
 import { serializeConversation, serializeMessage } from './serialize.ts';
@@ -133,19 +134,53 @@ export function isDoneMessage(m: MessageRow | undefined): m is MessageRow {
  * side threads on its paragraphs. Nobody is asked to reply; agents read it when they are next asked.
  */
 export function postDocument(ctx: AppContext, threadId: string, body: { name?: unknown; content?: unknown }): ReturnType<typeof serializeMessage> {
-  const { store, hub } = ctx;
-  const thread = store.getThread(threadId);
-  if (!thread) throw new HttpError(404, 'thread not found');
-  if (thread.parent_thread_id) throw new HttpError(400, 'Documents go in a channel or chat, not in a side thread');
-  const name = typeof body.name === 'string' ? body.name.trim().split(/[\\/]/).pop()! : '';
-  if (!DOCUMENT_NAME_RE.test(name)) throw new HttpError(400, 'Only Markdown documents (.md) can be added');
+  const thread = documentThread(ctx, threadId);
+  const name = fileName(body.name);
+  if (!DOCUMENT_NAME_RE.test(name)) throw new HttpError(400, 'Only Markdown (.md) and PDF documents can be added');
   const content = (typeof body.content === 'string' ? body.content : '').replace(/^\uFEFF/, '').replace(/\r\n?/g, '\n').trimEnd();
   if (!content.trim()) throw new HttpError(400, `${name} is empty`);
   if (content.length > MAX_DOCUMENT_CHARS) throw new HttpError(413, `${name} is too large (over ${MAX_DOCUMENT_CHARS / 1_000_000} MB)`);
-  const meta = describeDocument(name, content);
+  return insertDocument(ctx, thread, describeDocument(name, content), content);
+}
+
+/**
+ * Shares a PDF the same way. Its text and layout are extracted once, here; the PDF is kept by content
+ * hash (server/context/pdf.ts), and the message holds the text agents read and threads quote.
+ */
+export async function postPdf(ctx: AppContext, threadId: string, rawName: unknown, bytes: Uint8Array): Promise<ReturnType<typeof serializeMessage>> {
+  const thread = documentThread(ctx, threadId);
+  const name = fileName(rawName);
+  if (!PDF_NAME_RE.test(name)) throw new HttpError(400, 'Only Markdown (.md) and PDF documents can be added');
+  if (!bytes.length) throw new HttpError(400, `${name} is empty`);
+  if (bytes.length > MAX_PDF_BYTES) throw new HttpError(413, `${name} is too large (over ${MAX_PDF_BYTES / 1_000_000} MB)`);
+  let pdf: ExtractedPdf;
+  try {
+    pdf = await extractPdf(bytes);
+  } catch (e: any) {
+    throw new HttpError(400, `${name} ${e.message}`);
+  }
+  if (pdf.text.length > MAX_DOCUMENT_CHARS) throw new HttpError(413, `${name} has too much text (over ${MAX_DOCUMENT_CHARS / 1_000_000} million characters)`);
+  const stored = storePdf(ctx.filesDir(), bytes, pdf.layout);
+  const meta: PdfMeta = { kind: 'document', name, title: pdf.title, words: pdf.words, format: 'pdf', pages: pdf.pages, ...stored, ...(pdf.scanned ? { scanned: true } : {}) };
+  return insertDocument(ctx, thread, meta, pdf.text);
+}
+
+function documentThread(ctx: AppContext, threadId: string): ThreadRow {
+  const thread = ctx.store.getThread(threadId);
+  if (!thread) throw new HttpError(404, 'thread not found');
+  if (thread.parent_thread_id) throw new HttpError(400, 'Documents go in a channel or chat, not in a side thread');
+  return thread;
+}
+
+const fileName = (name: unknown) => (typeof name === 'string' ? name.trim().split(/[\\/]/).pop()! : '');
+
+/** The document's message; a chat that starts with it is named after it. */
+function insertDocument(ctx: AppContext, thread: ThreadRow, meta: DocumentMeta, content: string): ReturnType<typeof serializeMessage> {
+  const { store, hub } = ctx;
   const conversation = store.getConversation(thread.conversation_id)!;
   if (conversation.kind === 'chat' && store.listMessages(thread.id).length === 0) {
-    store.updateConversation(conversation.id, { name: (meta.title ?? name.replace(DOCUMENT_NAME_RE, '')).slice(0, 40).trim() || name });
+    const bare = meta.name.replace(DOCUMENT_NAME_RE, '').replace(PDF_NAME_RE, '');
+    store.updateConversation(conversation.id, { name: (meta.title ?? bare).slice(0, 40).trim() || meta.name });
     hub.global('conversation.updated', serializeConversation({ ...store.getConversation(conversation.id)!, root_thread_id: thread.id }));
   }
   const msg = store.insertMessage({ thread_id: thread.id, author_kind: 'user', content_md: content, status: 'done', meta });

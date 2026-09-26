@@ -1,4 +1,5 @@
 import type { MessageRow } from '../db/queries.ts';
+import { isPdfMeta, renderPdf } from './pdf.ts';
 
 /**
  * A shared Markdown document is a user message with meta.kind 'document': it sits in the timeline like
@@ -45,6 +46,7 @@ export function describeDocument(name: string, content: string): DocumentMeta {
  * same document is byte-identical in every prompt that carries it.
  */
 export function renderDocument(meta: Pick<DocumentMeta, 'name'>, content: string): string {
+  if (isPdfMeta(meta)) return renderPdf(meta, content);
   return `<document name="${attr(meta.name)}">\n${content.trim()}\n</document>`;
 }
 

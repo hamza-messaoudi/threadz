@@ -24,6 +24,7 @@
     "comark": "0.7.0",
     "gray-matter": "^4.0.3",
     "hono": "^4.13.9",
+    "pdfjs-dist": "^6.3.289",
     "picomatch": "^4.0.7",
     "shell-quote": "^1.10.0",
     "ulid": "^3.0.2",
