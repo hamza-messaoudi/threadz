@@ -8,9 +8,96 @@ export interface DocMeta {
   name: string;
   title: string | null;
   words: number;
+  /** Absent until the first edit (version 1). */
+  version?: number;
+  editedBy?: Editor;
+  editedAt?: number;
+  /** Blocks the latest edit changed or added, [first, last]. */
+  changed?: [number, number][];
+}
+
+/** Who saved a version: the user, or an agent by name. */
+export interface Editor {
+  kind: 'user' | 'agent';
+  id: string | null;
 }
 
 export const docMeta = (m: Pick<Message, 'meta'> | undefined | null): DocMeta | null => (m?.meta?.kind === 'document' ? (m.meta as DocMeta) : null);
+export const docVersion = (meta: DocMeta | null | undefined) => meta?.version ?? 1;
+export const editorName = (by: Editor | null | undefined) => (!by ? 'Someone' : by.kind === 'agent' ? `@${by.id}` : 'You');
+
+export interface DocVersion {
+  version: number;
+  by: Editor;
+  /** The thread an agent edited from. */
+  threadId: string | null;
+  /** This version brought back an older one. */
+  restored: number | null;
+  createdAt: number;
+  chars: number;
+}
+
+/** A save the server refused because someone saved a newer version first. */
+export interface DocConflict {
+  message: string;
+  version: number;
+  editedBy: Editor | null;
+}
+
+/** One change: `find` (at offset `at` of version `base`, if known) becomes `replace`. */
+export interface DocOp {
+  find: string;
+  replace: string;
+  at?: number;
+}
+
+export const documentApi = {
+  save: (id: string, body: { base: number; content?: string; ops?: DocOp[] }) => api.patch<{ message: Message; version: number; rebased: boolean; unchanged: boolean }>(`/api/documents/${id}`, body),
+  restore: (id: string, version: number, base: number) => api.post<{ message: Message; version: number }>(`/api/documents/${id}/restore`, { version, base }),
+  versions: (id: string) => api.get<{ current: number; versions: DocVersion[] }>(`/api/documents/${id}/versions`),
+  version: (id: string, version: number) => api.get<{ version: number; content: string }>(`/api/documents/${id}/versions/${version}`),
+};
+
+/**
+ * The blocks a section edit covers: a heading and everything under it, up to the next heading of its
+ * level or above (a title's, up to the next heading). Before the first heading: the blocks up to it.
+ * Returns [from, to], inclusive.
+ */
+export function sectionOf(headings: Heading[], blocks: number, index: number): [number, number] {
+  const i = headings.findIndex((h) => h.index > index);
+  const here = i < 0 ? headings.at(-1) : headings[i - 1];
+  if (!here || here.index > index) return [0, (headings[0]?.index ?? blocks) - 1];
+  // A lone h1 is the document's title: its section is the opening under it, not the whole text.
+  const level = here.level === 1 && headings.filter((h) => h.level === 1).length === 1 ? 3 : here.level;
+  const next = headings.find((h) => h.index > here.index && h.level <= level);
+  return [here.index, (next?.index ?? blocks) - 1];
+}
+
+/** The source of blocks from..to (inclusive), exactly as written, and where it starts in the text. */
+export function sourceOf(content: string, lines: [number, number][], from: number, to: number): { text: string; at: number } {
+  const src = content.split('\n');
+  const start = lines[from][0];
+  const end = lines[to][1];
+  let at = 0;
+  for (let i = 0; i < start; i++) at += src[i].length + 1;
+  return { text: src.slice(start, end).join('\n'), at };
+}
+
+/**
+ * An agent's reply without its <document_edit> blocks (the server applies them and the reply shows
+ * the results). While the reply streams, a block still being written is cut too, and named in `drafting`.
+ */
+export function withoutEdits(content: string): { text: string; drafting: string | null } {
+  if (!content.includes('<document_edit')) return { text: content, drafting: null };
+  let text = content.replace(/<document_edit\b[^>]*>[\s\S]*?<\/document_edit>/g, '');
+  let drafting: string | null = null;
+  const open = text.search(/<document_edit\b/);
+  if (open >= 0) {
+    drafting = /name\s*=\s*"([^"]*)"/.exec(text.slice(open))?.[1] ?? 'the document';
+    text = text.slice(0, open);
+  }
+  return { text: text.replace(/\n{3,}/g, '\n\n').trim(), drafting };
+}
 
 export const isMarkdownFile = (f: { name: string }) => /\.(md|markdown)$/i.test(f.name);
 
@@ -134,3 +221,10 @@ export function excerpt(blocks: Block[], index: number, max = 90): string {
   const text = nodeText(b.node).replace(/\s+/g, ' ').trim();
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }
+
+/**
+ * Asks a document on screen to show a version (an edit note, an agent's edit result): the current one
+ * with what its edit changed marked, or an older one as a preview.
+ */
+export const REVEAL_EDIT = 'doc:reveal-edit';
+export const revealEdit = (documentId: string, version?: number) => window.dispatchEvent(new CustomEvent(REVEAL_EDIT, { detail: { id: documentId, version } }));

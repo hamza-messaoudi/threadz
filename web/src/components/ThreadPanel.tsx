@@ -82,7 +82,7 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
   }, [info?.conversationId, conversation.id]);
 
   useEffect(() => {
-    if (info?.parentMessageId != null && info.blockIndex != null) onSource({ messageId: info.parentMessageId, start: info.blockIndex, end: info.blockEnd ?? info.blockIndex });
+    if (info?.parentMessageId != null && info.blockIndex != null && info.blockIndex >= 0) onSource({ messageId: info.parentMessageId, start: info.blockIndex, end: info.blockEnd ?? info.blockIndex });
     return () => onSource(null);
   }, [info?.parentMessageId, info?.blockIndex, info?.blockEnd, onSource]);
 
@@ -174,6 +174,13 @@ export function ThreadPanel({ threadId, conversation, focusId, onClose, onSource
               <SwapText text={collapsed ? 'Expand' : 'Collapse'} />
             </button>
           </div>
+          {info.anchor && (
+            <div className={`quote-anchor ${info.anchor}`}>
+              {info.anchor === 'removed'
+                ? `Version ${info.anchorVersion} removed or rewrote this passage: the thread is no longer on the document. Quoted as it was.`
+                : `Version ${info.anchorVersion} changed this passage. Quoted as it was when the thread began.`}
+            </div>
+          )}
           <div ref={quoteBody} className="quote-clip t-resize">
             <MessageMarkdown id={`quote:${threadId}`} content={info.blockText} className="quote-body" />
           </div>

@@ -1,4 +1,5 @@
-import type { ConversationRow, MessageRow, RunRow } from '../db/queries.ts';
+import type { AppContext } from '../app.ts';
+import type { ConversationRow, MessageRow, RunRow, Store } from '../db/queries.ts';
 
 const parse = (s: string | null) => {
   if (s === null || s === undefined) return null;
@@ -61,4 +62,30 @@ export function serializeRun(r: RunRow) {
     threadId: r.thread_id,
     meta: parse(r.meta),
   };
+}
+
+export function serializeChildThread(t: ReturnType<Store['childThreadSummaries']>[number]) {
+  return {
+    id: t.id,
+    parentMessageId: t.parent_message_id,
+    blockIndex: t.block_index,
+    blockEnd: t.block_end,
+    replyCount: t.reply_count,
+    lastActivity: t.last_activity ?? t.created_at,
+    channel: t.channel_id ? { id: t.channel_id, name: t.channel_name! } : null,
+    /** An edit of the document changed the passage, or removed it (the thread is detached: blockIndex < 0). */
+    anchor: t.anchor,
+    anchorVersion: t.anchor_version,
+    quote: t.quote ? t.quote.replace(/\s+/g, ' ').replace(/^[#>*\-\s]+/, '').slice(0, 100) : null,
+  };
+}
+
+/** Keeps the parent's thread badge (reply count, last activity, passage) live, also after the thread became a channel. */
+export function publishChildSummary(ctx: Pick<AppContext, 'store' | 'hub'>, threadId: string): void {
+  const t = ctx.store.getThread(threadId);
+  const parentId = t?.parent_thread_id ?? t?.origin_thread_id;
+  if (!parentId) return;
+  const sum = ctx.store.childThreadSummaries(parentId).find((x) => x.id === t!.id);
+  if (!sum) return;
+  ctx.hub.thread(parentId, 'thread.created', serializeChildThread(sum));
 }
