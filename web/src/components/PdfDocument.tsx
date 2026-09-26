@@ -235,7 +235,9 @@ export const PdfDocumentMessage = memo(function PdfDocumentMessage(props: Messag
     let j = -1;
     for (let i = 0; i < p.paras.length && p.paras[i][3] <= y; i++) j = i;
     if (j >= 0) return p.first + j;
-    return r.top > line ? -1 : Math.max(-1, p.first - 1);
+    // In the page's top margin: the reader is on this page, at its first passage.
+    if (k === 0 && r.top > line) return -1;
+    return p.paras.length ? p.first : p.first - 1;
   }, []);
   const whereAt = useCallback(
     (block: number) => {
@@ -750,7 +752,7 @@ function TextLayer({ pdf, file, n, page }: { pdf: PDFDocumentProxy; file: string
  * the way pdf.js's text layer does, so item k is span k; if the counts disagree (another pdf.js), each
  * span goes to the paragraph box it sits in instead.
  */
-function groupParagraphs(el: HTMLElement, divs: HTMLElement[], page: PdfPageLayout) {
+export function groupParagraphs(el: HTMLElement, divs: HTMLElement[], page: PdfPageLayout) {
   const owner = new Int32Array(divs.length).fill(-1);
   const exact = page.paras.every((q) => q[1] <= divs.length);
   if (exact) page.paras.forEach(([a, z], j) => owner.fill(j, a, z));

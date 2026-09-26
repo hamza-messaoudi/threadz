@@ -353,3 +353,8 @@
 .quote-plain p + p {
   margin-top: 0.6em;
 }
+
+/* A PDF's outline often puts chapters (level 1) straight after sections: give them room. */
+.contents-item[data-level='1']:not(:first-child) {
+  margin-top: 10px;
+}
