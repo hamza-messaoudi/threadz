@@ -5,7 +5,7 @@
 .pdf-body {
   --paper: #ffffff;
   --paper-edge: oklch(0 0 0 / 0.1);
-  --paper-shadow: 0 1px 2px oklch(0 0 0 / 0.06), 0 4px 14px -6px oklch(0 0 0 / 0.14);
+  --paper-shadow: 0 1px 2px oklch(0 0 0 / 0.08), 0 6px 20px -8px oklch(0 0 0 / 0.22);
   /* The page stays paper in the dark theme, a little dimmer so it does not glare. */
   --paper-dim: none;
   --mark-active: color-mix(in srgb, var(--accent) 16%, transparent);
