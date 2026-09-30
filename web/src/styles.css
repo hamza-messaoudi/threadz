@@ -3295,7 +3295,6 @@ details.step-prompt pre {
 }
 /* Only seen in a fast fling: faint lines where the text is about to be. */
 .doc-chunk.is-placeholder {
-  max-width: 68ch;
   background: repeating-linear-gradient(to bottom, var(--bg-soft) 0 0.7rem, transparent 0.7rem 1.6rem);
   mask-image: linear-gradient(to right, black 60%, transparent);
   border-radius: 4px;
@@ -3566,12 +3565,12 @@ details.step-prompt pre {
 }
 
 /* ---------- document editing ---------- */
-/* A section's pencil ends where the text's measure does (68ch of the body font), and shows on hover like the thread gutter. */
+/* A section's pencil sits at the right edge of the text column, and shows on hover like the thread gutter. */
 .block-edit {
   position: absolute;
   top: -2px;
   font-size: 0.95rem;
-  left: min(calc(100% - 26px), calc(9px + 68ch - 26px));
+  left: calc(100% - 26px);
   width: 26px;
   height: 26px;
   display: flex;

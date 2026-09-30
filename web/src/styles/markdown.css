@@ -191,13 +191,15 @@
     margin-top: 2rem;
   }
 
+  /* Headings are bold and step down in size, and even the smallest stays above body text (0.95rem). */
   .md-root :is(h1, h2, h3, h4, h5, h6):not(figure *) {
     font-family: var(--font-mono);
-    font-weight: 400;
+    font-weight: 700;
     color: var(--foreground);
+    text-wrap: balance;
   }
   .md-root h1:not(figure *) {
-    font-size: 1.25rem;
+    font-size: 1.375rem;
     line-height: 1.25;
     letter-spacing: -0.025em;
   }
@@ -207,20 +209,18 @@
     }
   }
   .md-root h2:not(figure *) {
-    font-size: 0.875rem;
-    line-height: 1.5;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    font-size: 1.125rem;
+    line-height: 1.4;
+    letter-spacing: -0.015em;
   }
   .md-root h3:not(figure *) {
-    font-size: 0.875rem;
+    font-size: 1rem;
     line-height: 1.5;
-    letter-spacing: -0.025em;
+    letter-spacing: -0.01em;
   }
   .md-root :is(h4, h5, h6):not(figure *) {
-    font-size: 0.8125rem;
+    font-size: 0.95rem;
     line-height: 1.5;
-    color: var(--muted-foreground);
   }
 
   .md-root :is(p, li):not(figure *) {
@@ -231,25 +231,24 @@
     line-height: 1.7;
   }
   .md-doc .md-root h1:not(figure *) {
-    font-size: 1.5rem;
+    font-size: 1.625rem;
     line-height: 1.2;
-    text-wrap: balance;
   }
   @media (width >= 40rem) {
     .md-doc .md-root h1:not(figure *) {
-      font-size: 1.75rem;
+      font-size: 1.875rem;
     }
   }
   .md-doc .md-root h2:not(figure *) {
-    font-size: 0.9rem;
-    text-wrap: balance;
+    font-size: 1.3125rem;
+    line-height: 1.35;
   }
   .md-doc .md-root h3:not(figure *) {
-    font-size: 1rem;
-    text-wrap: balance;
+    font-size: 1.125rem;
+    line-height: 1.4;
   }
-  .md-root :is(p, ul, ol):not(figure *) {
-    max-width: 68ch;
+  .md-doc .md-root :is(h4, h5, h6):not(figure *) {
+    font-size: 1rem;
   }
   .md-root ul:not(figure *) {
     list-style: none;
@@ -379,7 +378,7 @@
     font-size: 0.75em;
   }
 
-  /* Figures own their width; prose keeps 68ch. Everything stays inside the message column. */
+  /* Prose and figures fill the message column; nothing reaches past it. */
   .md-root > .comark-content {
     min-width: 0;
     max-width: 100%;

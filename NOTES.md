@@ -116,7 +116,7 @@ The demo's accents are three blues (228, 259, 248 hue). mdxcn's own defaults are
 
 - **Fonts:** Geist (sans, body) and Geist Mono (figures, headings, code) with `font-feature-settings: "ss01" 1, "zero" 1` on mono. Antialiased.
 - **Dashed lines:** `repeating-linear-gradient(<dir>, var(--graph-frame) 0 2px, transparent 2px 7px)`, 1 px thick (`graph-frame`, `graph-rule`, `graph-rule-y` utilities). `graph-scroll-x` scrolls with hidden scrollbars.
-- **Page:** `max-w-4xl` (56rem) column, `px-5 sm:px-8`; prose paragraphs and lists `max-w-[68ch]`.
+- **Page:** `max-w-4xl` (56rem) column, `px-5 sm:px-8`; prose paragraphs and lists fill the column (no 68ch measure).
 - **Prose (`comark-prose`),** every rule guarded with `:not(figure *)`: blocks `margin-top: 1.5rem`; `h1` mono `text-2xl sm:text-3xl` leading-tight tracking-tight; `h2` mono `text-base` uppercase `tracking-[0.08em]` `mt-16`; `h3` mono `text-base` tracking-tight `mt-10`; `p, li` `0.95rem` leading-relaxed; `ul` no bullets, `li::before` `-` in accent with `mr-2`, `space-y-2`; `ol` decimal `pl-5`; `a` accent, dotted underline, offset 4px; `strong` medium weight; inline `code` `bg-muted` mono `0.85em`, padding `0.1em 0.35em`; `pre` dashed frame, `p-5`, mono `text-xs`; `blockquote` accent left border 1 px, `pl-4`, italic, muted; `hr` dashed rule `my-12`; `figure` `my-12`. Selection: accent background, `--background` text.
 - **Code:** the demo has no Shiki theme (plain `pre`), so Phase 4 uses `github-light` / `github-dark`.
 - **Tabs / chrome style:** mono `text-xs` uppercase, active tab `[ LABEL ]` in accent, inactive in `--graph-muted`.
